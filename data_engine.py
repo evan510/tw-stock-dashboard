@@ -1,33 +1,135 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
+import logging
 import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+import streamlit as st
 import config
-import logging
-# 關閉 yfinance 預設在終端機噴出的 404 與 No data found 雜訊
+
+# 抑制 yfinance 終端報錯
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_online_stock_name(symbol):
+    """當本地字典沒有時，自動向 Yahoo Finance / TWSE 抓取官方公司簡稱或 ETF 名稱"""
+    sym_clean = str(symbol).strip().upper()
+    
+    # 常用 ETF / 特別股保底表
+    fallback_map = {
+        '0050': '元大台灣50', '0056': '元大高股息', '00878': '國泰永續高股息',
+        '00919': '群益台灣精選高息', '00929': '復華台灣科技優息', '006208': '富邦台50',
+        '00940': '元大台灣價值高息', '00713': '元大台灣高息低波', '00679B': '元大美債20年',
+        '00687B': '國泰20年美債'
+    }
+    if sym_clean in fallback_map:
+        return fallback_map[sym_clean]
+        
+    suffixes = ['.TW', '.TWO'] if not sym_clean.startswith(('3', '4', '5', '6', '8')) else ['.TWO', '.TW']
+    for s in suffixes:
+        try:
+            t = yf.Ticker(f"{sym_clean}{s}")
+            name = t.info.get('shortName') or t.info.get('longName')
+            if name:
+                clean_name = name.split(' ')[0].replace('Co.,', '').replace('CORP.', '').replace('LIMITED', '').strip()
+                return clean_name
+        except Exception:
+            continue
+            
+    return f"台股 {sym_clean}"
+
 def resolve_stock(query_text):
-    clean = str(query_text).strip()
+    """
+    全台股/ETF 雙向代號與名稱解析器
+    支援 0050, 00878, 6467, 泰合, 仁新 等所有上市櫃與 ETF
+    """
+    clean = str(query_text).strip().upper()
     if not clean:
         return "", ""
+        
+    # 1. 精準命中字典 (名稱或代號)
     if clean in config.STOCK_NAME_MAP:
         mapped = config.STOCK_NAME_MAP[clean]
-        if mapped.isdigit():
+        # 若 clean 本身是數字或以 00 開頭的代號
+        if clean.isdigit() or (clean.startswith('00') and len(clean) >= 4):
+            return clean, mapped
+        else:
+            # clean 是中文名稱
             full_name = config.STOCK_NAME_MAP.get(mapped, clean)
             return mapped, full_name
-        else:
-            return clean, mapped
+
+    # 2. 模糊搜尋本地字典
     for name, sym in config.STOCK_NAME_MAP.items():
-        if not name.isdigit() and (clean in name or name in clean):
+        if (clean in name or name in clean) and not (clean.isdigit() or sym.isdigit() and len(clean) == len(sym)):
             return sym, config.STOCK_NAME_MAP.get(sym, name)
-    if clean.isdigit() and len(clean) >= 4:
-        return clean, f"台股 {clean}"
+
+    # 3. 若為純數字代碼（4~6碼）或含英數代號 (如 00679B) -> 自動聯網查中文全名
+    is_code = (clean.isdigit() and 4 <= len(clean) <= 6) or (clean.startswith('00') and len(clean) >= 4)
+    if is_code:
+        online_name = fetch_online_stock_name(clean)
+        return clean, online_name
+
     return clean, clean
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_stock_history(symbol, period='4mo'):
+    """取得台股與 ETF 歷史量價，支援上市 .TW、上櫃/興櫃 .TWO 與 00878 等 ETF"""
+    sym_clean = str(symbol).strip().upper()
+    
+    # 判斷優先查詢後綴
+    if sym_clean.startswith(('3', '4', '5', '6', '8')) and not sym_clean.startswith(('00', '01')):
+        candidate_suffixes = ['.TWO', '.TW']
+    else:
+        candidate_suffixes = ['.TW', '.TWO']
+        
+    df = pd.DataFrame()
+    for suffix in candidate_suffixes:
+        try:
+            full_sym = f"{sym_clean}{suffix}"
+            stock = yf.Ticker(full_sym)
+            # 優先以傳入的 period 查詢
+            temp_df = stock.history(period=period, raise_errors=False)
+            
+            # 若為 00878 等 ETF 在週末或盤後遇 period 回傳不足，自動以 1mo 備援
+            if temp_df.empty or len(temp_df) < 1:
+                temp_df = stock.history(period='1mo', raise_errors=False)
+                
+            if not temp_df.empty and len(temp_df) >= 1:
+                df = temp_df
+                break
+        except Exception:
+            continue
+            
+    if not df.empty:
+        # 移除可能存在的空值或無效交易日
+        df = df.dropna(subset=['Close'])
+        
+        # 均線系統 (加入 min_periods 確保即使天數較短也能算出均線，不致報錯)
+        df['5MA'] = df['Close'].rolling(5, min_periods=1).mean()
+        df['10MA'] = df['Close'].rolling(10, min_periods=1).mean()
+        df['20MA'] = df['Close'].rolling(20, min_periods=1).mean()
+        df['60MA'] = df['Close'].rolling(60, min_periods=1).mean()
+        df['Vol_MA5'] = df['Volume'].rolling(5, min_periods=1).mean()
+        df['Vol_MA20'] = df['Volume'].rolling(20, min_periods=1).mean()
+        
+        # 布林通道 (20MA +- 2標準差)
+        std20 = df['Close'].rolling(20, min_periods=1).std().fillna(0)
+        df['BB_Upper'] = df['20MA'] + (std20 * 2)
+        df['BB_Lower'] = df['20MA'] - (std20 * 2)
+        
+        # RSI (14日)
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14, min_periods=1).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14, min_periods=1).mean()
+        rs = gain / (loss + 1e-9)
+        df['RSI'] = 100 - (100 / (1 + rs))
+        df['RSI'] = df['RSI'].fillna(50.0)
+        
+    return df
+
+@st.cache_data(ttl=900, show_spinner=False)
 def get_twse_market_active_stocks(limit=30):
     active_stocks = []
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -57,7 +159,8 @@ def get_twse_market_active_stocks(limit=30):
                         trade_vol = int(vol_str) if vol_str else 0
                     except ValueError:
                         continue
-                    if len(sym) == 4 and not sym.startswith('00') and trade_value > 50000000:
+                    # 允許 4~5 碼股票與主流 ETF
+                    if (len(sym) == 4 or sym.startswith('00')) and trade_value > 50000000:
                         active_stocks.append({
                             'symbol': sym, 'name': name,
                             'trade_value': trade_value, 'trade_vol': trade_vol
@@ -77,53 +180,13 @@ def get_twse_market_active_stocks(limit=30):
         })
     return fallback
 
-def get_stock_history(symbol, period='4mo'):
-    """取得台股量價，優先判斷上櫃興櫃市場，避免終端機跳出 404"""
-    sym_clean = str(symbol).strip()
-    
-    # 台灣生技、網通、設備等許多標的為上櫃/興櫃(如 6467, 6696, 3131, 3324, 6187)
-    # 若為常見上櫃代碼開頭(3, 5, 6, 8)，優先查 .TWO，失敗再查 .TW
-    if sym_clean.startswith(('3', '5', '6', '8')):
-        candidate_suffixes = ['.TWO', '.TW']
-    else:
-        candidate_suffixes = ['.TW', '.TWO']
-        
-    df = pd.DataFrame()
-    for suffix in candidate_suffixes:
-        try:
-            full_sym = f"{sym_clean}{suffix}"
-            stock = yf.Ticker(full_sym)
-            temp_df = stock.history(period=period, raise_errors=False)
-            if not temp_df.empty and len(temp_df) >= 3:
-                df = temp_df
-                break
-        except Exception:
-            continue
-            
-    if not df.empty:
-        df['5MA'] = df['Close'].rolling(5).mean()
-        df['10MA'] = df['Close'].rolling(10).mean()
-        df['20MA'] = df['Close'].rolling(20).mean()
-        df['60MA'] = df['Close'].rolling(60).mean()
-        df['Vol_MA5'] = df['Volume'].rolling(5).mean()
-        df['Vol_MA20'] = df['Volume'].rolling(20).mean()
-        std20 = df['Close'].rolling(20).std()
-        df['BB_Upper'] = df['20MA'] + (std20 * 2)
-        df['BB_Lower'] = df['20MA'] - (std20 * 2)
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / (loss + 1e-9)
-        df['RSI'] = 100 - (100 / (1 + rs))
-        
-    return df
-
+@st.cache_data(ttl=900, show_spinner=False)
 def get_macro_overview():
     overview = {}
     for name, sym in config.MACRO_TICKERS.items():
         try:
             t = yf.Ticker(sym)
-            hist = t.history(period='5d')
+            hist = t.history(period='5d', raise_errors=False)
             if len(hist) >= 2:
                 close = hist['Close'].iloc[-1]
                 prev = hist['Close'].iloc[-2]
@@ -135,6 +198,7 @@ def get_macro_overview():
             overview[name] = {'close': 0.0, 'pct': 0.0, 'change': 0.0}
     return overview
 
+@st.cache_data(ttl=900, show_spinner=False)
 def get_institutional_investors_summary():
     try:
         url = "https://www.twse.com.tw/rwd/zh/fund/BFI82U?response=json"
@@ -150,6 +214,7 @@ def get_institutional_investors_summary():
         pass
     return {'外資': 0.0, '投信': 0.0, '自營商': 0.0, '合計': 0.0}
 
+@st.cache_data(ttl=900, show_spinner=False)
 def get_top_investment_trust_stocks(limit=30):
     stocks = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -172,7 +237,7 @@ def get_top_investment_trust_stocks(limit=30):
                         net_buy = int(net_buy_str)
                     except ValueError:
                         continue
-                    if len(sym) == 4 and not sym.startswith('00') and net_buy > 0:
+                    if (len(sym) == 4 or sym.startswith('00')) and net_buy > 0:
                         stocks[sym] = {'name': name, 'trust_buy_vol': net_buy, 'date': query_date.strftime('%Y-%m-%d')}
                         count += 1
                         if count >= limit:
@@ -183,6 +248,7 @@ def get_top_investment_trust_stocks(limit=30):
             continue
     return stocks
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_stock_news(keyword, max_items=4):
     news_list = []
     try:

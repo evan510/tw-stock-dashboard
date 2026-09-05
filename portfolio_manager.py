@@ -1,8 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import json
 import os
 import pandas as pd
-from data_engine import get_stock_history
+from data_engine import get_stock_history, resolve_stock
 
 PORTFOLIO_FILE = "user_portfolio.json"
 
@@ -10,7 +10,7 @@ def load_portfolio():
     if not os.path.exists(PORTFOLIO_FILE):
         default_data = [
             {"symbol": "6467", "name": "泰合生技", "cost": 175.0, "shares": 1000, "buy_date": "2026-08-28"},
-            {"symbol": "6696", "name": "仁新", "cost": 125.0, "shares": 1000, "buy_date": "2026-08-29"},
+            {"symbol": "0050", "name": "元大台灣50", "cost": 185.0, "shares": 1000, "buy_date": "2026-08-25"},
             {"symbol": "2330", "name": "台積電", "cost": 960.0, "shares": 1000, "buy_date": "2026-08-20"}
         ]
         save_portfolio(default_data)
@@ -27,8 +27,11 @@ def save_portfolio(data):
 
 def add_holding(symbol, name, cost, shares, buy_date=None):
     items = load_portfolio()
+    sym_clean = str(symbol).strip().upper()
+    r_sym, r_name = resolve_stock(sym_clean)
+    final_name = name.strip() if name and name.strip() else r_name
     items.append({
-        "symbol": str(symbol).strip(), "name": str(name).strip(),
+        "symbol": r_sym, "name": final_name,
         "cost": float(cost), "shares": int(shares), "buy_date": buy_date or "2026-09-01"
     })
     save_portfolio(items)
@@ -44,7 +47,9 @@ def evaluate_holdings(holdings):
     total_cost, total_market_value = 0.0, 0.0
     for idx, item in enumerate(holdings):
         sym = item['symbol']
-        df = get_stock_history(sym, period='2mo')
+        r_sym, r_name = resolve_stock(sym)
+        name = item.get('name') or r_name
+        df = get_stock_history(r_sym, period='2mo')
         if df.empty:
             continue
         last = df.iloc[-1]
@@ -60,19 +65,19 @@ def evaluate_holdings(holdings):
         ma20 = float(last['20MA']) if pd.notnull(last['20MA']) else current_price
         
         status_light = "🟢 正常續抱"
-        advice = "均線架構健全，未破防守線，順勢抱緊波段。"
+        advice = "均線健全，未破防守線，順勢抱緊。"
         if current_price < ma20:
             status_light = "🔴 跌破生命線"
-            advice = "收盤已跌破 20MA 月線，短波段趨勢轉弱，建議紀律停損或分批獲利了結！"
+            advice = "收盤跌破 20MA 月線，波段轉弱，建議停損或獲利了結！"
         elif current_price < cost * 0.95:
             status_light = "🔴 觸發停損線"
-            advice = f"虧損已超過 5% (現價 ${current_price})，原始進場假設失效，請果斷執行停損！"
+            advice = f"虧損超過 5% (現價 ${current_price})，原始假設失效，請停損！"
         elif profit_pct >= 15.0:
             status_light = "🟢 獲利奔跑"
-            advice = "波段獲利已達 15% 以上，可將防守線拉高至買進成本，讓利潤持續奔跑！"
+            advice = "獲利超過 15%，可將停損調高至成本價，讓利潤奔跑！"
             
         evaluated.append({
-            'index': idx, 'symbol': sym, 'name': item['name'], 'cost': cost,
+            'index': idx, 'symbol': r_sym, 'name': name, 'cost': cost,
             'shares': shares, 'current_price': current_price, 'profit': round(profit, 0),
             'profit_pct': profit_pct, 'market_val': round(market_val, 0), 'ma20': round(ma20, 2),
             'status_light': status_light, 'advice': advice

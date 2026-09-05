@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import json
 import os
 
@@ -9,8 +9,9 @@ def load_custom_pool():
         initial = [
             {"symbol": "6467", "name": "泰合生技", "tag": "生技新藥/癌症劑型", "note": "關注興櫃量能與月線支撐"},
             {"symbol": "6696", "name": "仁新", "tag": "生技新藥/股票拆股", "note": "1拆10流動性大增"},
-            {"symbol": "2330", "name": "台積電", "tag": "晶圓代工龍頭", "note": "先進製程需求旺盛"},
-            {"symbol": "3017", "name": "奇鋐", "tag": "AI水冷散熱", "note": "水冷機櫃主力受惠股"}
+            {"symbol": "0050", "name": "元大台灣50", "tag": "市值型ETF", "note": "大盤權值核心"},
+            {"symbol": "00878", "name": "國泰永續高股息", "tag": "高股息ETF", "note": "熱門存股標的"},
+            {"symbol": "2330", "name": "台積電", "tag": "晶圓代工龍頭", "note": "先進製程需求旺盛"}
         ]
         save_custom_pool(initial)
         return initial
@@ -26,7 +27,7 @@ def save_custom_pool(pool_data):
 
 def add_to_custom_pool(symbol, name, tag="自選題材", note=""):
     pool = load_custom_pool()
-    sym_clean = str(symbol).strip()
+    sym_clean = str(symbol).strip().upper()
     for item in pool:
         if item['symbol'] == sym_clean:
             item['name'] = name
@@ -45,6 +46,6 @@ def add_to_custom_pool(symbol, name, tag="自選題材", note=""):
 
 def remove_from_custom_pool(symbol):
     pool = load_custom_pool()
-    sym_clean = str(symbol).strip()
+    sym_clean = str(symbol).strip().upper()
     new_pool = [item for item in pool if item['symbol'] != sym_clean]
     save_custom_pool(new_pool)

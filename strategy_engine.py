@@ -1,6 +1,7 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
+import streamlit as st
 from data_engine import (
     get_stock_history,
     get_twse_market_active_stocks,
@@ -26,96 +27,99 @@ def evaluate_entry_status(df, last, prev):
     stop_loss = round(min(ma20, float(df['Low'].iloc[-3:].min())), 2)
     
     if bias_5ma > 8.0 or bias_20ma > 20.0 or rsi > 80:
-        return ("⚠️ 極度過熱 (切勿追高)", "red", f"短線急漲過猛（5MA正乖離達 {bias_5ma}%，RSI {round(rsi,1)}），隨時有獲利回吐震盪風險。建議等待拉回回測 5MA/10MA 守穩再進場！", stop_loss)
+        return ("⚠️ 極度過熱 (切勿追高)", "hot", f"短線急漲過猛（5MA正乖離達 {bias_5ma}%，RSI {round(rsi,1)}），隨時有震盪拉回風險。耐心等待回測 5MA/10MA 守穩再進場！", stop_loss)
     elif close > ma20 and vol_ratio >= 1.35 and pct_change >= 2.0:
-        return ("🟢 動能突破 (可以進場)", "green", f"帶量突破整理區（均量 {vol_ratio} 倍），均線發散多頭，可逢回測分批進場，停損嚴守今日低點 ${round(float(last['Low']), 2)}。", stop_loss)
+        return ("🟢 動能突破 (可以進場)", "buy", f"放量突破整理區（均量 {vol_ratio} 倍），均線多頭發散，可逢回測分批進場，停損守今日低點 ${round(float(last['Low']), 2)}。", stop_loss)
     elif close > ma20 and abs(close - ma5) / ma5 <= 0.025 and vol < vol_ma5 * 1.1:
-        return ("🟢 回測有守 (買點浮現)", "green", f"股價回測 5MA/10MA 不破，成交量良性萎縮（均量 {vol_ratio} 倍），浮額清洗完畢，屬風險報酬比極佳之切入點！", stop_loss)
+        return ("🟢 回測有守 (買點浮現)", "buy", f"股價回測 5MA/10MA 不破，成交量良性萎縮（均量 {vol_ratio} 倍），籌碼沈澱，屬高盈虧比切入點！", stop_loss)
     elif close > ma20:
-        return ("🟡 區間整理 (觀望等待)", "orange", "站穩月線但動能尚未表態，處以盤代跌結構，建議列入觀察名單，等待帶量攻擊紅棒再行介入。", stop_loss)
+        return ("🟡 區間整理 (觀望等待)", "neutral", "站穩月線但動能尚未表態，處以盤代跌結構，列入觀察名單，等待帶量紅棒再介入。", stop_loss)
     else:
-        return ("🔴 弱勢破線 (嚴禁進場)", "gray", "跌破 20MA 生命線，短中期動能轉弱，上方套牢賣壓沉重，切忌盲目抄底，已有持股者逢反彈宜執行減碼。", stop_loss)
+        return ("🔴 弱勢破線 (嚴禁進場)", "bear", "跌破 20MA 生命線，動能偏弱，切忌盲目抄底，已有持股者逢反彈宜執行減碼。", stop_loss)
 
+@st.cache_data(ttl=900, show_spinner=False)
+def analyze_single_stock_metrics(sym):
+    df = get_stock_history(sym, period='3mo')
+    if df.empty or len(df) < 10:
+        return None
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    close = round(float(last['Close']), 2)
+    pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
+    vol = float(last['Volume'])
+    vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
+    vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
+    rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
+    ma5 = round(float(last['5MA']), 2) if pd.notnull(last['5MA']) else close
+    bias_5ma = round(((close - ma5) / ma5) * 100, 2)
+    signal, color, advice, stop_loss = evaluate_entry_status(df, last, prev)
+    
+    return {
+        'close': close,
+        'pct_change': pct_change,
+        'vol_ratio': vol_ratio,
+        'rsi': rsi,
+        'bias_5ma': bias_5ma,
+        'entry_signal': signal,
+        'entry_color': color,
+        'action_advice': advice,
+        'stop_loss': stop_loss
+    }
+
+def analyze_custom_pool_stocks(pool_list):
+    results = []
+    for item in pool_list:
+        sym = item['symbol']
+        # 自動重新解析以確保名稱與 ETF 準確性
+        r_sym, r_name = resolve_stock(sym)
+        name = item.get('name') or r_name
+        tag = item.get('tag', '自選')
+        note = item.get('note', '')
+        
+        metrics = analyze_single_stock_metrics(r_sym)
+        if not metrics:
+            continue
+            
+        results.append({
+            'symbol': r_sym,
+            'name': name,
+            'tag': tag,
+            'note': note,
+            **metrics
+        })
+    return results
+
+@st.cache_data(ttl=900, show_spinner=False)
 def analyze_dynamic_market_hot_stocks(limit=30):
     active_pool = get_twse_market_active_stocks(limit=limit)
     results = []
     for item in active_pool:
         sym = item['symbol']
         name = item['name']
-        df = get_stock_history(sym, period='3mo')
-        if df.empty or len(df) < 15:
+        metrics = analyze_single_stock_metrics(sym)
+        if not metrics:
             continue
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        close = round(float(last['Close']), 2)
-        pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
-        vol = float(last['Volume'])
-        vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-        vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
-        rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
-        ma5 = round(float(last['5MA']), 2) if pd.notnull(last['5MA']) else close
-        bias_5ma = round(((close - ma5) / ma5) * 100, 2)
-        signal, color, advice, stop_loss = evaluate_entry_status(df, last, prev)
         turnover_billion = round(item.get('trade_value', 0) / 100000000, 2)
         results.append({
-            'symbol': sym, 'name': name, 'close': close, 'pct_change': pct_change,
-            'turnover_billion': turnover_billion, 'vol_ratio': vol_ratio, 'rsi': rsi,
-            'bias_5ma': bias_5ma, 'entry_signal': signal, 'entry_color': color,
-            'action_advice': advice, 'stop_loss': stop_loss
+            'symbol': sym,
+            'name': name,
+            'turnover_billion': turnover_billion,
+            **metrics
         })
     return results
 
-def analyze_custom_pool_stocks(pool_list):
-    results = []
-    for item in pool_list:
-        sym = item['symbol']
-        name = item.get('name', sym)
-        tag = item.get('tag', '自選')
-        note = item.get('note', '')
-        df = get_stock_history(sym, period='3mo')
-        if df.empty or len(df) < 10:
-            continue
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        close = round(float(last['Close']), 2)
-        pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
-        vol = float(last['Volume'])
-        vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-        vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
-        rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
-        ma5 = round(float(last['5MA']), 2) if pd.notnull(last['5MA']) else close
-        bias_5ma = round(((close - ma5) / ma5) * 100, 2)
-        signal, color, advice, stop_loss = evaluate_entry_status(df, last, prev)
-        results.append({
-            'symbol': sym, 'name': name, 'tag': tag, 'note': note,
-            'close': close, 'pct_change': pct_change, 'vol_ratio': vol_ratio,
-            'rsi': rsi, 'bias_5ma': bias_5ma, 'entry_signal': signal,
-            'entry_color': color, 'action_advice': advice, 'stop_loss': stop_loss
-        })
-    return results
-
+@st.cache_data(ttl=900, show_spinner=False)
 def analyze_curated_theme_stocks():
     results = []
     for sym, name, theme in config.CURATED_THEME_POOL:
-        df = get_stock_history(sym, period='3mo')
-        if df.empty or len(df) < 15:
+        metrics = analyze_single_stock_metrics(sym)
+        if not metrics:
             continue
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        close = round(float(last['Close']), 2)
-        pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
-        vol = float(last['Volume'])
-        vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-        vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
-        rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
-        ma5 = round(float(last['5MA']), 2) if pd.notnull(last['5MA']) else close
-        bias_5ma = round(((close - ma5) / ma5) * 100, 2)
-        signal, color, advice, stop_loss = evaluate_entry_status(df, last, prev)
         results.append({
-            'symbol': sym, 'name': name, 'theme': theme, 'close': close,
-            'pct_change': pct_change, 'vol_ratio': vol_ratio, 'rsi': rsi,
-            'bias_5ma': bias_5ma, 'entry_signal': signal, 'entry_color': color,
-            'action_advice': advice, 'stop_loss': stop_loss
+            'symbol': sym,
+            'name': name,
+            'theme': theme,
+            **metrics
         })
     results.sort(key=lambda x: x['vol_ratio'], reverse=True)
     return results
@@ -123,9 +127,9 @@ def analyze_curated_theme_stocks():
 def run_ai_deep_analysis(query_input):
     sym, resolved_name = resolve_stock(query_input)
     if not sym:
-        return None, "請輸入有效的股票名稱或代號！"
+        return None, "請輸入有效的股票名稱、ETF 或代號！"
     df = get_stock_history(sym, period='4mo')
-    if df.empty or len(df) < 15:
+    if df.empty or len(df) < 10:
         return None, f"查無代號或名稱為『{query_input}』({sym}) 的歷史行情。"
     last = df.iloc[-1]
     prev = df.iloc[-2]
@@ -144,16 +148,16 @@ def run_ai_deep_analysis(query_input):
     
     if vol_ratio >= 1.5 and pct_change >= 2.0:
         buying_power = "🔥 主力強攻掃貨（買盤動能極度充沛）"
-        vol_structure = "典型帶量長紅攻擊型態，主力大戶積極進駐建倉，市場人氣聚集。"
+        vol_structure = "帶量長紅攻擊型態，主力大戶積極進駐，市場關注度高。"
     elif vol_ratio >= 1.5 and pct_change <= -2.0:
         buying_power = "⚠️ 高檔爆量長黑（賣盤沉重，主力獲利倒貨）"
-        vol_structure = "出量收黑K棒，顯示高檔逢高調節賣壓出籠，短線提防假突破拉回震盪。"
+        vol_structure = "出量收黑K棒，高檔調節賣壓出籠，短線提防假突破震盪。"
     elif vol_ratio < 0.8:
         buying_power = "💤 縮量沈澱（買賣雙方觀望，浮額清洗中）"
-        vol_structure = "量縮洗盤整理，若能在關鍵均線處止跌，往往醞釀下一波發動契機。"
+        vol_structure = "量縮洗盤整理，若能在均線處止跌，往往醞釀下一波契機。"
     else:
         buying_power = "⚖️ 買賣勢均力敵（常態換手）"
-        vol_structure = "成交量接近 5 日均量水準，多空雙方短線維持既有技術軌道行進。"
+        vol_structure = "成交量接近 5 日均量，短線維持既有技術軌道運行。"
         
     if close > ma20 and ma5 > ma10 and ma10 > ma20 and vol_ratio >= 1.25 and rsi < 78:
         ai_verdict = "🟢 強烈建議波段進場（多方動能共振）"
@@ -186,6 +190,7 @@ def run_ai_deep_analysis(query_input):
         'stop_loss': stop_loss, 'target': target, 'rr': rr, 'news': news
     }, None
 
+@st.cache_data(ttl=900, show_spinner=False)
 def analyze_and_rank_pool(limit=30):
     candidates = get_top_investment_trust_stocks(limit=limit)
     rankings = []
@@ -193,7 +198,7 @@ def analyze_and_rank_pool(limit=30):
         name = meta['name']
         trust_vol = meta.get('trust_buy_vol', 0)
         df = get_stock_history(symbol, period='3mo')
-        if df.empty or len(df) < 20:
+        if df.empty or len(df) < 15:
             continue
         last = df.iloc[-1]
         prev = df.iloc[-2]
@@ -216,7 +221,7 @@ def analyze_and_rank_pool(limit=30):
         else:
             score -= 25; signals.append("跌破 20MA 生命線（弱勢整理）")
         if ma5 > ma10 and ma10 > ma20:
-            score += 15; signals.append("均線完美多頭排列 (5MA > 10MA > 20MA)"); tags.append("多頭排列")
+            score += 15; signals.append("均線多頭排列 (5MA > 10MA > 20MA)"); tags.append("多頭排列")
         if vol > vol_ma5 * 1.3:
             score += 15; signals.append("出量攻擊：成交量高於 5 日均量 30%"); tags.append("放量突破")
         stop_loss = round(min(ma20, float(df['Low'].iloc[-3:].min())), 2)

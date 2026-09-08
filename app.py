@@ -4,15 +4,17 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pandas as pd
 
+import data_engine
 from data_engine import (
     get_macro_overview,
     get_institutional_investors_summary,
     get_stock_history,
     get_stock_news,
-    get_institutional_streak_stocks,
-    scan_theme_catalyst_news,
     resolve_stock
 )
+get_institutional_streak_stocks = getattr(data_engine, 'get_institutional_streak_stocks', lambda limit=30: {})
+scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda max_news=6: [])
+
 from strategy_engine import (
     calculate_market_regime,
     evaluate_oldwang_strategy,

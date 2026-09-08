@@ -2,15 +2,16 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import data_engine
 from data_engine import (
     get_stock_history,
     get_twse_market_active_stocks,
     get_top_investment_trust_stocks,
-    get_institutional_streak_stocks,
-    scan_theme_catalyst_news,
     get_stock_news,
     resolve_stock
 )
+get_institutional_streak_stocks = getattr(data_engine, 'get_institutional_streak_stocks', lambda limit=30: {})
+scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda max_news=6: [])
 from custom_pool_manager import load_custom_pool
 import config
 

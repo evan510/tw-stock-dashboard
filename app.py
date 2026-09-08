@@ -23,11 +23,12 @@ from strategy_engine import (
     analyze_curated_theme_stocks,
     run_ai_deep_analysis,
     analyze_and_rank_pool,
-    get_short_term_catalyst_picks
+    get_short_term_catalyst_picks,
+    get_intraday_volume_surge_radar
 )
 from custom_pool_manager import load_custom_pool, add_to_custom_pool, remove_from_custom_pool
 from portfolio_manager import load_portfolio, add_holding, remove_holding, evaluate_holdings
-from notifier import load_alert_settings, save_alert_settings, send_line_notify, send_webhook_alert
+from notifier import load_alert_settings, save_alert_settings, send_line_notify, send_webhook_alert, send_daily_market_summary
 import config
 
 st.set_page_config(
@@ -293,10 +294,11 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
             </div>
             """, unsafe_allow_html=True)
 
-    st_tab1, st_tab2, st_tab3 = st.tabs([
+    st_tab1, st_tab2, st_tab3, st_tab4 = st.tabs([
         "🎯 模組 A：短線 5~20% 點位狙擊榜",
         "📰 模組 B：即時題材催化劑新聞",
-        "💰 模組 C：法人連續買超鎖碼明細"
+        "💰 模組 C：法人連續買超鎖碼明細",
+        "⚡ 模組 D：盤中早盤起漲與預估爆量雷達"
     ])
 
     with st_tab1:
@@ -353,7 +355,7 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
                             """, unsafe_allow_html=True)
 
             st.markdown("---")
-            st.markdown("#### 📋 短線 5% ~ 20% 狙擊總榜單 Top 30 (含操作燈號與盈虧比)")
+            st.markdown("#### 📋 短線 5% ~ 20% 狙擊總榜單 Top 30 (含近10日走勢火花線)")
             df_picks = pd.DataFrame([
                 {
                     '操作燈號': x.get('action_signal', '🟢 建議買進'),
@@ -361,6 +363,7 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
                     '名稱': x['name'],
                     '現價': x['close'],
                     '漲跌幅': f"{x['pct_change']:+}%",
+                    '10日走勢': x.get('sparkline', '───'),
                     '短線評分': x.get('short_score', 60),
                     '籌碼與題材特徵': f"{x.get('streak_type', '短線動能')} ({x.get('streak_days', 1)}日)",
                     '量能倍數': f"{x.get('vol_ratio', 1.0)}x",
@@ -436,6 +439,48 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
             st.dataframe(df_streak, use_container_width=True)
         else:
             st.info("連線證交所資料讀取中，請稍候點擊下方同步刷新數據。")
+
+    with st_tab4:
+        st.subheader("⚡ 盤中早盤預估成交量起漲雷達 (09:15 突擊)")
+        st.caption("動態時間權重換算今日全日預估成交量：鎖定【預估爆量 >= 1.35x 均量】且【漲幅 +1.5% ~ +6.5%】起漲表態點")
+        with st.spinner("掃描全市場盤中即時爆量起漲標的中..."):
+            intraday_picks = get_intraday_volume_surge_radar(limit=20)
+            
+        if intraday_picks:
+            st.markdown(f"**⚡ 今日早盤預估爆量起漲焦點：共 {len(intraday_picks)} 檔**")
+            
+            c_cards = intraday_picks[:4]
+            cols_intra = st.columns(len(c_cards))
+            for i, p_item in enumerate(c_cards):
+                with cols_intra[i]:
+                    st.markdown(f"""
+                    <div class="rwd-card" style="border-top: 3px solid #f59e0b;">
+                        <h4 style="margin:0;">{p_item['name']} <small style="color:gray;">({p_item['symbol']})</small></h4>
+                        <h2 style="margin:6px 0; color:#ef4444;">${p_item['close']} <span style="font-size:1rem;">{p_item['pct_change']:+}%</span></h2>
+                        <span class="pill pill-gold">預估量能：{p_item['projected_vol_ratio']} 倍</span>
+                        <div style="margin-top:8px; font-size:0.8rem; color:#94a3b8;">
+                            {p_item['entry_advice']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+            st.markdown("---")
+            df_intra = pd.DataFrame([
+                {
+                    '訊號特徵': x['surge_signal'],
+                    '代號': x['symbol'],
+                    '名稱': x['name'],
+                    '現價': x['close'],
+                    '當前漲跌幅': f"{x['pct_change']:+}%",
+                    '預估全天量能倍數': f"{x['projected_vol_ratio']} 倍",
+                    '當前累積成交量': f"{int(x['cur_vol']):,} 股",
+                    '全天預估成交量': f"{int(x['projected_vol']):,} 股",
+                    '操盤建議': x['entry_advice']
+                } for x in intraday_picks
+            ])
+            st.dataframe(df_intra, use_container_width=True)
+        else:
+            st.info("目前盤中無顯著預估爆量起漲個股，或處於休市時段。")
 
 # ================= 頁面 1：個股診斷室 (AI 深度量化與燈號) =================
 elif menu == "🩺 1. 個股診斷室 (AI 深度量化與燈號)":
@@ -564,7 +609,8 @@ elif menu == "🩺 1. 個股診斷室 (AI 深度量化與燈號)":
             # 5. 多維度體檢雷達 (兩欄：量價與均線老王戰法)
             c_left, c_right = st.columns(2)
             with c_left:
-                st.markdown("#### 🔍 主力籌碼與成交量能體檢")
+                st.markdown("#### 🔍 主力量能與技術體檢")
+                st.write(f"• **近 10 日走勢**：<span style='font-size:1.15rem; font-family:monospace; color:#38bdf8;'>{data.get('sparkline', '───')}</span>", unsafe_allow_html=True)
                 st.write(f"• **主力買盤狀態**：{data['buying_power']}")
                 st.write(f"• **今日成交量能**：約 **{data['vol']:,.0f} 股** ｜ 均量倍數：**{data['vol_ratio']} 倍**")
                 st.write(f"• **14日 RSI 位階**：**{data['rsi']}** ({'超買過熱' if data['rsi']>75 else ('超賣築底' if data['rsi']<30 else '健康常態')})")
@@ -584,6 +630,29 @@ elif menu == "🩺 1. 個股診斷室 (AI 深度量化與燈號)":
                         st.success("✔ 股價站穩 20MA 生命線之上，多方結構完整。")
                     else:
                         st.error("✖ 股價跌破 20MA 月線生命線，短中期偏空整理。")
+
+            # 5-2. 三大法人籌碼純度體檢卡片 (土洋合買 vs 對作倒貨)
+            inst = data.get('institutional', {})
+            if inst and inst.get('has_data'):
+                st.markdown(f"""
+                <div class="rwd-card" style="border-left: 5px solid {inst['purity_color']}; margin-top: 10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <div>
+                            <span style="font-size:0.85rem; color:#94a3b8; font-weight:600;">INSTITUTIONAL CHIPS 三大法人籌碼純度體檢</span>
+                            <h3 style="margin:2px 0 0 0; color:{inst['purity_color']};">{inst['purity_tag']}</h3>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="font-size:0.82rem; color:#cbd5e1;">法人合計買賣超：<b>{inst['total_buy']:+,} 張</b></span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:16px; margin:8px 0; font-size:0.88rem; flex-wrap:wrap;">
+                        <span>外資：<b style="color:{'#ef4444' if inst['foreign_buy']>=0 else '#22c55e'}">{inst['foreign_buy']:+,} 張</b></span>
+                        <span>投信：<b style="color:{'#ef4444' if inst['trust_buy']>=0 else '#22c55e'}">{inst['trust_buy']:+,} 張</b></span>
+                        <span>自營商：<b style="color:{'#ef4444' if inst['dealer_buy']>=0 else '#22c55e'}">{inst['dealer_buy']:+,} 張</b></span>
+                    </div>
+                    <p style="margin:0; font-size:0.84rem; color:#94a3b8;">👉 {inst['purity_desc']}</p>
+                </div>
+                """, unsafe_allow_html=True)
 
             st.markdown("---")
 
@@ -696,11 +765,13 @@ elif menu == "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)":
                             </div>
                             """, unsafe_allow_html=True)
                             
-            st.markdown("#### 📋 全市場 Top 30 短線量能詳細清單")
+            st.markdown("#### 📋 全市場 Top 30 短線量能詳細清單 (含10日走勢縮圖)")
             df_m = pd.DataFrame([
                 {
                     '代號': x['symbol'], '名稱': x['name'], '成交金額(億)': x['turnover_billion'],
-                    '現價': x['close'], '漲跌幅': f"{x['pct_change']}%", '量能倍數': f"{x['vol_ratio']}x",
+                    '現價': x['close'], '漲跌幅': f"{x['pct_change']}%",
+                    '10日走勢': x.get('sparkline', '───'),
+                    '量能倍數': f"{x['vol_ratio']}x",
                     'RS相對強度': f"{x['rs_factor']:+}%", '短線型態': x['pattern'],
                     '進場決策': x['entry_signal'], '防守停損價': x['stop_loss'], '目標價1': x['target1']
                 } for x in market_hot
@@ -961,16 +1032,30 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
         line_token = n_c1.text_input("Line Notify 權杖 (Token)：", value=alert_cfg.get("line_token", ""), type="password", help="前往 https://notify-bot.line.me/ 申請權杖並加入群組")
         webhook_url = n_c2.text_input("Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
         
-        btn_save_alert, btn_test_line = st.columns(2)
+        n_chk1, n_chk2 = st.columns(2)
+        daily_digest = n_chk1.checkbox("每日盤後自動推播 Top 5 狙擊焦點懶人包", value=alert_cfg.get("daily_digest", True))
+        enable_stop = n_chk2.checkbox("跌破停損價與 20MA 自動警報", value=alert_cfg.get("enable_stop_loss_alert", True))
+
+        btn_save_alert, btn_test_line, btn_daily_digest = st.columns(3)
         if btn_save_alert.button("💾 儲存通知設定", use_container_width=True):
             alert_cfg["line_token"] = line_token.strip()
             alert_cfg["webhook_url"] = webhook_url.strip()
+            alert_cfg["daily_digest"] = daily_digest
+            alert_cfg["enable_stop_loss_alert"] = enable_stop
             save_alert_settings(alert_cfg)
             st.success("通知設定已儲存！")
-        if btn_test_line.button("📲 發送測試訊息到 Line", use_container_width=True):
-            ok, msg = send_line_notify("【台股戰情室 v4.3】Line Notify 測試訊息：系統連線正常！", token=line_token.strip())
+        if btn_test_line.button("📲 發送測試連線訊息", use_container_width=True):
+            ok, msg = send_line_notify("【台股戰情室 v4.4.0 Elite】Line Notify 測試訊息：系統連線正常！", token=line_token.strip())
             if ok:
                 st.success(msg)
+            else:
+                st.error(msg)
+        if btn_daily_digest.button("🚀 立即推送今日盤後焦點快報", use_container_width=True):
+            picks_for_line = get_short_term_catalyst_picks(limit=5)
+            regime_for_line = calculate_market_regime()
+            ok, msg = send_daily_market_summary(picks_for_line, regime_for_line, token=line_token.strip())
+            if ok:
+                st.success("今日盤後 Top 5 焦點快報已順利發送到您的手機 Line！")
             else:
                 st.error(msg)
                 

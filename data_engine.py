@@ -219,9 +219,9 @@ def get_institutional_investors_summary():
 @st.cache_data(ttl=900, show_spinner=False)
 def get_top_investment_trust_stocks(limit=30):
     stocks = {}
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     today = datetime.now()
-    for delta in range(9):
+    for delta in range(12):
         query_date = today - timedelta(days=delta)
         if query_date.weekday() >= 5 and delta == 0:
             continue
@@ -229,12 +229,15 @@ def get_top_investment_trust_stocks(limit=30):
         url = f"https://www.twse.com.tw/rwd/zh/fund/TWT44U?response=json&date={date_str}"
         try:
             res = requests.get(url, headers=headers, timeout=5).json()
-            if res.get('stat') == 'OK' and 'data' in res and len(res['data']) > 0:
+            data_rows = res.get('data', [])
+            if res.get('stat') == 'OK' and len(data_rows) > 0:
                 count = 0
-                for row in res.get('data', []):
-                    sym = str(row[0]).strip()
-                    name = str(row[1]).strip()
-                    net_buy_str = str(row[4]).replace(',', '').strip()
+                for row in data_rows:
+                    if len(row) < 6:
+                        continue
+                    sym = str(row[1]).strip()
+                    name = str(row[2]).strip()
+                    net_buy_str = str(row[5]).replace(',', '').strip()
                     try:
                         net_buy = int(net_buy_str)
                     except ValueError:
@@ -249,6 +252,71 @@ def get_top_investment_trust_stocks(limit=30):
         except Exception:
             continue
     return stocks
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_stock_institutional_breakdown(symbol):
+    """
+    抓取單檔股票最新三大法人買賣超 (外資/投信/自營商)，判斷籌碼純度與土洋合買/對作狀態
+    """
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    sym_clean = str(symbol).strip().upper()
+    try:
+        url = "https://www.twse.com.tw/rwd/zh/fund/T86?response=json&selectType=ALL"
+        res = requests.get(url, headers=headers, timeout=6).json()
+        if res.get('stat') == 'OK' and 'data' in res:
+            for row in res['data']:
+                if row[0].strip() == sym_clean:
+                    foreign_buy = int(str(row[4]).replace(',', '').strip()) // 1000  # 轉成張數
+                    trust_buy = int(str(row[10]).replace(',', '').strip()) // 1000
+                    dealer_buy = (int(str(row[11]).replace(',', '').strip())) // 1000
+                    total_buy = foreign_buy + trust_buy + dealer_buy
+                    
+                    # 籌碼純度判定
+                    if foreign_buy > 0 and trust_buy > 0:
+                        purity_tag = "🔥 土洋合買（籌碼極純）"
+                        purity_desc = "外資與投信步調一致大舉買超，主力作多共識強烈！"
+                        purity_color = "#22c55e"
+                    elif trust_buy > 0 and foreign_buy < 0:
+                        purity_tag = "⚠️ 土洋對作（投信買外資賣）"
+                        purity_desc = "投信積極認養，但外資逢高調節，短線易有洗盤震盪。"
+                        purity_color = "#f59e0b"
+                    elif foreign_buy > 0 and trust_buy < 0:
+                        purity_tag = "⚠️ 土洋對作（外資買投信賣）"
+                        purity_desc = "外資回補買進，投信獲利了結結帳，留意籌碼換手穩定度。"
+                        purity_color = "#f59e0b"
+                    elif trust_buy > 0 and foreign_buy >= 0:
+                        purity_tag = "🟢 投信波段鎖碼"
+                        purity_desc = "內資投信主控加碼，籌碼集中度漸增。"
+                        purity_color = "#3b82f6"
+                    elif foreign_buy < 0 and trust_buy < 0:
+                        purity_tag = "🔴 土洋齊賣（提防調節）"
+                        purity_desc = "外資與投信同步賣超，短線浮額偏重，建議嚴守防守線。"
+                        purity_color = "#ef4444"
+                    else:
+                        purity_tag = "⚖️ 法人中性換手"
+                        purity_desc = "法人買賣超幅度不大，以市場常態撮合為主。"
+                        purity_color = "#94a3b8"
+                        
+                    return {
+                        'has_data': True,
+                        'foreign_buy': foreign_buy,
+                        'trust_buy': trust_buy,
+                        'dealer_buy': dealer_buy,
+                        'total_buy': total_buy,
+                        'purity_tag': purity_tag,
+                        'purity_desc': purity_desc,
+                        'purity_color': purity_color
+                    }
+    except Exception:
+        pass
+        
+    return {
+        'has_data': False,
+        'foreign_buy': 0, 'trust_buy': 0, 'dealer_buy': 0, 'total_buy': 0,
+        'purity_tag': '⚖️ 盤後籌碼結算中',
+        'purity_desc': '每日 15:00 ~ 15:30 證交所盤後更新三大法人明細。',
+        'purity_color': '#94a3b8'
+    }
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_stock_news(keyword, max_items=4):

@@ -11,9 +11,102 @@ from data_engine import (
     resolve_stock
 )
 get_institutional_streak_stocks = getattr(data_engine, 'get_institutional_streak_stocks', lambda limit=30: {})
-scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda max_news=6: [])
+scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda theme_category="全部題材", max_news=10: [])
+get_stock_institutional_breakdown = getattr(data_engine, 'get_stock_institutional_breakdown', lambda sym: {'has_data': False})
 from custom_pool_manager import load_custom_pool
 import config
+
+def generate_sparkline(series):
+    """
+    產生純文字火花走勢縮圖 (Sparkline:  ▂▃▅▆▇)
+    """
+    if series is None or len(series) < 2:
+        return "───"
+    vals = [float(v) for v in series if pd.notnull(v)]
+    if len(vals) < 2:
+        return "───"
+    min_v, max_v = min(vals), max(vals)
+    if max_v == min_v:
+        return "▅▅▅▅▅"
+    ticks = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+    spark = ""
+    for v in vals:
+        idx = int(((v - min_v) / (max_v - min_v + 1e-9)) * (len(ticks) - 1))
+        idx = min(max(idx, 0), len(ticks) - 1)
+        spark += ticks[idx]
+    return spark
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_intraday_volume_surge_radar(limit=20):
+    """
+    ⚡ 盤中早盤預估成交量起漲雷達
+    根據台股盤中時間動態推估今日全天成交量，鎖定【預估放量 >= 1.5倍】且【漲幅 +1.5% ~ +5.5%】起漲焦點！
+    """
+    from datetime import datetime
+    now = datetime.now()
+    cur_hour = now.hour
+    cur_min = now.minute
+    
+    # 計算開盤已過分鐘數 (09:00 開盤至 13:30 收盤，共 270 分鐘)
+    if cur_hour < 9:
+        elapsed_minutes = 15  # 尚未開盤時預設依早盤模擬
+    elif cur_hour > 13 or (cur_hour == 13 and cur_min >= 30):
+        elapsed_minutes = 270  # 已收盤，全日量
+    else:
+        elapsed_minutes = max((cur_hour - 9) * 60 + cur_min, 15)
+        
+    # 台股歷史累積成交量曲線權重：前15分鐘約佔18%，前30分鐘約佔28%，前60分鐘約佔42%
+    if elapsed_minutes <= 15:
+        expected_ratio = 0.18
+    elif elapsed_minutes <= 30:
+        expected_ratio = 0.28
+    elif elapsed_minutes <= 60:
+        expected_ratio = 0.42
+    elif elapsed_minutes <= 120:
+        expected_ratio = 0.65
+    else:
+        expected_ratio = min(elapsed_minutes / 270.0, 1.0)
+        
+    active_stocks = get_twse_market_active_stocks(limit=50)
+    radar_picks = []
+    
+    for s in active_stocks:
+        sym = s['symbol']
+        name = s['name']
+        df = get_stock_history(sym, period='2mo')
+        if df.empty or len(df) < 5:
+            continue
+            
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        close = round(float(last['Close']), 2)
+        prev_close = float(prev['Close'])
+        pct_change = round(((close - prev_close) / (prev_close + 1e-9)) * 100, 2)
+        
+        cur_vol = float(last['Volume'])
+        vol_ma20 = float(last['Vol_MA20']) if ('Vol_MA20' in last and pd.notnull(last['Vol_MA20'])) else cur_vol
+        ma5 = float(last['5MA']) if ('5MA' in last and pd.notnull(last['5MA'])) else close
+        
+        # 預估全天成交量 (Projected Volume)
+        projected_vol = round(cur_vol / max(expected_ratio, 0.15), 0)
+        projected_vol_ratio = round(projected_vol / (vol_ma20 + 1e-9), 2)
+        
+        # 篩選起漲點條件：漲幅 +1.5% ~ +6.5%，預估量 >= 1.35 倍均量，站上 5MA
+        if 1.5 <= pct_change <= 7.0 and projected_vol_ratio >= 1.35 and close >= ma5:
+            radar_picks.append({
+                'symbol': sym,
+                'name': name,
+                'close': close,
+                'pct_change': pct_change,
+                'projected_vol_ratio': projected_vol_ratio,
+                'cur_vol': cur_vol,
+                'projected_vol': projected_vol,
+                'surge_signal': '🔥 早盤爆量起漲突擊' if projected_vol_ratio >= 2.0 else '⚡ 預估放量突破',
+                'entry_advice': f"早盤預估全日量將達均量 {projected_vol_ratio} 倍，動能剛起跑，沿 5MA 順勢佈局！"
+            })
+            
+    radar_picks.sort(key=lambda x: x['projected_vol_ratio'], reverse=True)
+    return radar_picks[:limit]
 
 # ================= 1. 大盤體質評分 (Market Regime Score) =================
 @st.cache_data(ttl=600, show_spinner=False)
@@ -213,7 +306,7 @@ def analyze_single_stock_metrics(sym, market_score=60, twii_pct20=0.0):
         'rsi': rsi, 'bias_5ma': bias_5ma, 'entry_signal': signal,
         'entry_color': color, 'action_advice': advice, 'stop_loss': stop_loss,
         'target1': t1, 'target2': t2, 'rr1': rr1, 'rr2': rr2, 'rs_factor': rs,
-        'pattern': pattern
+        'pattern': pattern, 'sparkline': generate_sparkline(df['Close'].iloc[-10:])
     }
 
 def analyze_custom_pool_stocks(pool_list):
@@ -399,6 +492,8 @@ def run_ai_deep_analysis(query_input):
         vol_structure = "成交量接近 20 日均量，技術指標維持常態。"
         
     news = get_stock_news(resolved_name, max_items=4)
+    inst_breakdown = get_stock_institutional_breakdown(sym)
+    sparkline_10d = generate_sparkline(df['Close'].iloc[-10:])
     
     return {
         'symbol': sym, 'name': resolved_name, 'close': close, 'pct_change': pct_change,
@@ -409,7 +504,8 @@ def run_ai_deep_analysis(query_input):
         'ai_score': ai_score, 'diagnosis_tags': diagnosis_tags, 'ai_narrative': ai_analysis_narrative,
         'entry_zone': f"${round(close * 0.99, 1)} ~ ${close}",
         'stop_loss': stop_loss, 'target1': t1, 'target2': t2, 'rr1': rr1, 'rr2': rr2, 'rs_factor': rs,
-        'pattern': pattern, 'news': news, 'market_regime': regime, 'oldwang': oldwang_metrics
+        'pattern': pattern, 'news': news, 'market_regime': regime, 'oldwang': oldwang_metrics,
+        'institutional': inst_breakdown, 'sparkline': sparkline_10d
     }, None
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -623,7 +719,8 @@ def get_short_term_catalyst_picks(limit=30):
             'target2': target2,
             'reward_t1': reward_t1,
             'reward_t2': reward_t2,
-            'tags': tags
+            'tags': tags,
+            'sparkline': generate_sparkline(df['Close'].iloc[-10:])
         })
             
     results.sort(key=lambda x: x['short_score'], reverse=True)

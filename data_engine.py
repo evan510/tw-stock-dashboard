@@ -603,4 +603,41 @@ def get_night_session_radar():
 
     return radar
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def is_tw_trading_day(target_date=None):
+    """
+    判斷指定日期是否為台股交易日 (開盤營業日)
+    1. 週六、週日為非交易日
+    2. 自動串接臺灣證券交易所官方「市場開休市日期」API (TWSE Holiday Schedule)
+    3. 若遇國定假日 (春節、清明、端午、中秋、國慶、勞動節、颱風假等) 判定為非交易日
+    """
+    if target_date is None:
+        target_date = datetime.now().date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    # 1. 週末非交易日 (5=週六, 6=週日)
+    if target_date.weekday() >= 5:
+        return False, "非交易日 (週末例假日休市)"
+
+    date_str = target_date.strftime('%Y-%m-%d')
+    year_str = target_date.strftime('%Y')
+
+    # 2. 查詢證交所官方開休市日曆 API
+    try:
+        url = f"https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule?response=json"
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get('stat') == 'ok':
+                holidays = {row[0]: row[1] if len(row) > 1 else "國定假日" for row in data.get('data', [])}
+                if date_str in holidays:
+                    holiday_reason = holidays[date_str]
+                    return False, f"休市 ({holiday_reason})"
+    except Exception:
+        pass
+
+    return True, "台股開盤交易日"
+
+
 

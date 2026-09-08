@@ -16,6 +16,7 @@ def load_alert_settings():
         "enable_schedule_0830": True,
         "enable_schedule_0930": True,
         "enable_schedule_1530": True,
+        "only_on_trading_days": True,
         "enable_stop_loss_alert": True,
         "enable_ma20_break_alert": True
     }
@@ -256,7 +257,14 @@ def _run_scheduler_loop():
             # 僅在營業日 (週一至週五) 執行自動推播
             if weekday < 5:
                 settings = load_alert_settings()
-                
+
+                # 若使用者開啟「休市/非交易日不發送」，進行證交所休市日檢核
+                if settings.get("only_on_trading_days", True):
+                    is_trading, reason = getattr(data_engine, 'is_tw_trading_day', lambda: (True, ''))(now.date())
+                    if not is_trading:
+                        time.sleep(60)
+                        continue
+
                 # 1. 08:30 晨間早盤快報 (容許窗口 08:30 ~ 08:34)
                 if settings.get("enable_schedule_0830", True) and "08:30" <= hm <= "08:34":
                     slot_key = f"{today_str}_0830"

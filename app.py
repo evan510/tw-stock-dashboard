@@ -15,6 +15,7 @@ from data_engine import (
 get_institutional_streak_stocks = getattr(data_engine, 'get_institutional_streak_stocks', lambda limit=30: {})
 scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda max_news=6: [])
 get_night_session_radar = getattr(data_engine, 'get_night_session_radar', lambda: {})
+is_tw_trading_day = getattr(data_engine, 'is_tw_trading_day', lambda target_date=None: (True, ''))
 
 from strategy_engine import (
     calculate_market_regime,
@@ -1132,6 +1133,14 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
         enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True), help="早盤預估爆量起漲 Top 3 飆股")
         enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True), help="證交所法人連買 + 題材鎖碼 Top 5 懶人包")
 
+        today_is_trade, trade_desc = is_tw_trading_day()
+        trade_status_badge = "🟢 今日開盤" if today_is_trade else f"🔴 今日休市 ({trade_desc})"
+        only_trading_days = st.checkbox(
+            f"🚫 台股無交易日（休市/週末/國定假日）不發送推播  【目前狀態：{trade_status_badge}】",
+            value=alert_cfg.get("only_on_trading_days", True),
+            help="自動對接臺灣證券交易所官方市場開休市日曆，週末例假日、農曆春節、端午中秋與國定颱風假等休市期間自動暫停自動推播"
+        )
+
         enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
 
         btn_save_alert, btn_test_line = st.columns(2)
@@ -1142,6 +1151,7 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
             alert_cfg["enable_schedule_0830"] = enable_0830
             alert_cfg["enable_schedule_0930"] = enable_0930
             alert_cfg["enable_schedule_1530"] = enable_1530
+            alert_cfg["only_on_trading_days"] = only_trading_days
             alert_cfg["enable_stop_loss_alert"] = enable_stop
             save_alert_settings(alert_cfg)
             st.success("通知設定與排程設定已成功儲存！")

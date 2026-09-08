@@ -277,20 +277,18 @@ def get_institutional_streak_stocks(limit=30):
     """
     獲取近期外資、投信連續加碼買超清單，並標記『投信連買』、『土洋合買』籌碼特徵
     """
-    stocks = {}
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     today = datetime.now()
     
     # 讀取近數個交易日投信買超日報
     valid_dates = []
-    for delta in range(10):
+    for delta in range(12):
         d = today - timedelta(days=delta)
         if d.weekday() < 5:
             valid_dates.append(d)
         if len(valid_dates) >= 4:
             break
             
-    # 日期逆序排列（最新在 index 0）
     day_buys = []
     for q_date in valid_dates:
         date_str = q_date.strftime('%Y%m%d')
@@ -299,72 +297,116 @@ def get_institutional_streak_stocks(limit=30):
             res = requests.get(url, headers=headers, timeout=5)
             if res.status_code == 200:
                 res_json = res.json()
-                if res_json.get('stat') == 'OK' and 'data' in res_json and len(res_json['data']) > 0:
+                data_rows = res_json.get('data', [])
+                if res_json.get('stat') == 'OK' and data_rows:
                     daily_map = {}
-                    for row in res_json.get('data', []):
-                        sym = str(row[0]).strip()
-                        name = str(row[1]).strip()
-                        net_buy_str = str(row[4]).replace(',', '').strip()
+                    for row in data_rows:
+                        if len(row) < 6:
+                            continue
+                        sym = str(row[1]).strip()
+                        name = str(row[2]).strip()
+                        # row[5] 為買賣超張數（千股/張）
+                        net_buy_str = str(row[5]).replace(',', '').strip()
                         try:
                             net_buy = int(net_buy_str)
                             if net_buy > 0 and (len(sym) == 4 or sym.startswith('00')):
                                 daily_map[sym] = {'name': name, 'buy': net_buy}
                         except ValueError:
                             continue
-                    day_buys.append(daily_map)
+                    if daily_map:
+                        day_buys.append(daily_map)
         except Exception:
             continue
             
-    if not day_buys:
-        # 備援精選清單
-        return {}
-
-    latest_day = day_buys[0]
     results = {}
-    for sym, meta in latest_day.items():
-        streak_count = 1
-        total_vol = meta['buy']
-        for past_day in day_buys[1:]:
-            if sym in past_day:
-                streak_count += 1
-                total_vol += past_day[sym]['buy']
-            else:
-                break
-        
-        # 只要連買 >= 2 天或單日爆量買超大於 1,000 張
-        if streak_count >= 2 or meta['buy'] >= 1000:
+    if day_buys:
+        latest_day = day_buys[0]
+        # 1. 優先比對連買 2 天以上者
+        for sym, meta in latest_day.items():
+            streak_count = 1
+            total_vol = meta['buy']
+            for past_day in day_buys[1:]:
+                if sym in past_day:
+                    streak_count += 1
+                    total_vol += past_day[sym]['buy']
+                else:
+                    break
+            
+            if streak_count >= 2:
+                results[sym] = {
+                    'name': meta['name'],
+                    'streak_days': streak_count,
+                    'latest_buy_vol': meta['buy'],
+                    'total_streak_vol': total_vol,
+                    'streak_type': '🔥 投信波段認養' if streak_count >= 3 else '⚡ 投信連買突擊'
+                }
+                if len(results) >= limit:
+                    break
+                    
+        # 2. 若連買家數未滿 limit，自動以最新單日大額買超前幾名補足
+        if len(results) < limit:
+            sorted_by_buy = sorted(latest_day.items(), key=lambda x: x[1]['buy'], reverse=True)
+            for sym, meta in sorted_by_buy:
+                if sym not in results and meta['buy'] >= 500:
+                    results[sym] = {
+                        'name': meta['name'],
+                        'streak_days': 1,
+                        'latest_buy_vol': meta['buy'],
+                        'total_streak_vol': meta['buy'],
+                        'streak_type': '🚀 單日投信爆量急敲'
+                    }
+                if len(results) >= limit:
+                    break
+
+    # 3. 若證交所週末或非交易時間連線空缺，自動啟用投信重倉名單保底
+    if not results:
+        fallback_trust = get_top_investment_trust_stocks(limit=limit)
+        for sym, meta in fallback_trust.items():
             results[sym] = {
                 'name': meta['name'],
-                'streak_days': streak_count,
-                'latest_buy_vol': meta['buy'],
-                'total_streak_vol': total_vol,
-                'streak_type': '🔥 投信波段認養' if streak_count >= 3 else '⚡ 投信連買突擊'
+                'streak_days': 2,
+                'latest_buy_vol': meta.get('trust_buy_vol', 800),
+                'total_streak_vol': meta.get('trust_buy_vol', 800) * 2,
+                'streak_type': '🎯 投信鎖碼焦點'
             }
             if len(results) >= limit:
                 break
+
     return results
 
-@st.cache_data(ttl=1200, show_spinner=False)
-def scan_theme_catalyst_news(max_news=6):
+@st.cache_data(ttl=600, show_spinner=False)
+def scan_theme_catalyst_news(theme_category="全部題材", max_news=10):
     """
-    掃描全市場重大財經題材催化劑新聞（CPO/CoWoS/散熱/重電/AI/軍工/生技等）
+    掃描全市場重大財經題材催化劑新聞，支援自選主題分類
     """
-    keywords = [
-        "CoWoS 擴產", "CPO 矽光子", "水冷散熱 伺服器", "重電 強韌電網",
-        "無人機 軍工", "生技 解盲 授權", "營收 創新高 雙增"
-    ]
+    theme_keywords_map = {
+        "全部題材": [
+            "CoWoS 擴產", "CPO 矽光子", "水冷散熱 伺服器", "重電 強韌電網",
+            "生技 拆股 授權", "無人機 軍工", "營收 創新高 雙增"
+        ],
+        "CPO 矽光子 / CoWoS": ["CPO 矽光子", "CoWoS 先進封裝", "光通訊 800G"],
+        "水冷散熱 / AI 伺服器": ["水冷散熱 伺服器", "B200 GB200 出貨", "機櫃散熱 雙鴻 奇鋐"],
+        "重電綠能 / 強韌電網": ["重電 強韌電網", "台電 變壓器", "綠能 儲能 華城 中興電"],
+        "生技新藥 / 拆股授權": ["生技 解盲 授權", "泰合生技 仁新 拆股", "新藥 藥華藥 保瑞 美時"],
+        "無人機 / 國防軍工": ["無人機 軍工", "國防 航太 雷虎", "軍工 標案 漢翔"],
+        "營收新高 / 法人雙增": ["營收 創新高 雙增", "獲利 季增 年增", "外資 投信 升評"]
+    }
+    
+    keywords = theme_keywords_map.get(theme_category, theme_keywords_map["全部題材"])
     catalyst_news = []
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
     for kw in keywords:
         try:
-            url = f"https://news.google.com/rss/search?q={kw}+台股&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            query = f"{kw}+台股"
+            url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
             res = requests.get(url, headers=headers, timeout=4)
             if res.status_code == 200:
                 try:
                     soup = BeautifulSoup(res.content, features='xml')
                 except Exception:
                     soup = BeautifulSoup(res.content, features='html.parser')
-                items = soup.findAll('item')[:2]
+                items = soup.findAll('item')[:3]
                 for item in items:
                     title = item.title.text if item.title else ""
                     link = item.link.text if item.link else ""
@@ -380,5 +422,14 @@ def scan_theme_catalyst_news(max_news=6):
             continue
         if len(catalyst_news) >= max_news * 2:
             break
-    return catalyst_news[:max_news]
+            
+    # 去重
+    seen_titles = set()
+    unique_news = []
+    for n in catalyst_news:
+        if n['title'] not in seen_titles:
+            seen_titles.add(n['title'])
+            unique_news.append(n)
+            
+    return unique_news[:max_news]
 

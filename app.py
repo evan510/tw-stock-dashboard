@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+import threading
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
@@ -377,9 +377,32 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
 
     with st_tab2:
         st.subheader("📰 全市場即時重大題材催化劑焦點新聞")
-        st.caption("系統自動掃描市場焦點關鍵字：CPO 矽光子、CoWoS 先進封裝、水冷散熱、重電強韌電網、營收創新高、生技解盲授權等")
-        with st.spinner("抓取重大財經新聞催化劑中..."):
-            cat_news = scan_theme_catalyst_news(max_news=8)
+        st.caption("支援依照台灣主流核心題材分類篩選，掌握第一手利多催化與政策行情")
+        
+        c_news_sel, c_news_btn = st.columns([4, 1])
+        with c_news_sel:
+            news_category = st.selectbox(
+                "🇹🇼 選擇題材分類：",
+                [
+                    "全部題材",
+                    "CPO 矽光子 / CoWoS",
+                    "水冷散熱 / AI 伺服器",
+                    "重電綠能 / 強韌電網",
+                    "生技新藥 / 拆股授權",
+                    "無人機 / 國防軍工",
+                    "營收新高 / 法人雙增"
+                ],
+                key="catalyst_theme_sel"
+            )
+        with c_news_btn:
+            st.write("")
+            st.write("")
+            if st.button("🔄 刷新題材新聞", key="btn_refresh_news", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+
+        with st.spinner(f"正在搜尋『{news_category}』最新重大催化新聞..."):
+            cat_news = scan_theme_catalyst_news(theme_category=news_category, max_news=10)
 
         if cat_news:
             for item in cat_news:
@@ -393,16 +416,18 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("暫無最新重大題材新聞。")
+            st.info(f"『{news_category}』暫無最新重大新聞，可點擊上方按鈕重新整理。")
 
     with st_tab3:
         st.subheader("💰 證交所官方盤後法人連續買超名單")
-        st.caption("追蹤連續買超天數 2 天以上之主力吃貨軌跡")
+        st.caption("即時統計證交所盤後投信連買天數與單日急敲買超張數，掌握大戶鎖碼軌跡")
         streak_data = get_institutional_streak_stocks(limit=30)
         if streak_data:
             df_streak = pd.DataFrame([
                 {
-                    '代號': sym, '名稱': info['name'], '連買天數': f"{info['streak_days']} 天",
+                    '代號': sym,
+                    '名稱': info['name'],
+                    '連買天數': f"{info['streak_days']} 天",
                     '最新單日買超(張)': f"{info['latest_buy_vol']:,}",
                     '累計連買總張數': f"{info['total_streak_vol']:,}",
                     '法人特徵': info['streak_type']
@@ -410,7 +435,7 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
             ])
             st.dataframe(df_streak, use_container_width=True)
         else:
-            st.info("連線證交所資料讀取中或今日盤後未有顯著連買。")
+            st.info("連線證交所資料讀取中，請稍候點擊下方同步刷新數據。")
 
 # ================= 頁面 1：個股診斷室 (AI 深度量化與燈號) =================
 elif menu == "🩺 1. 個股診斷室 (AI 深度量化與燈號)":
@@ -1024,3 +1049,34 @@ elif menu == "📖 8. 短線與波段操盤心法":
       * 跌破 10MA / 20MA：生命線失守，「全數清倉，現金為王」！
       * 跌破近 20 日大量 K 棒最低點：主力套牢訊號，無條件止損撤退！
     """)
+
+# ================= 背景靜默異步預熱引擎 (Background Preload) =================
+def _background_preload_task():
+    """
+    在使用者瀏覽當前頁面的背後，由獨立後台線程預先載入其它頁面資料並放入 @st.cache_data 快取，
+    讓使用者切換到其它功能分頁時能夠享受秒開體驗！
+    """
+    try:
+        # 1. 預熱大盤環境評分與熱門 30 檔
+        calculate_market_regime()
+        analyze_dynamic_market_hot_stocks(limit=30)
+    except Exception:
+        pass
+        
+    try:
+        # 2. 預熱投信鎖碼前 30 檔
+        analyze_and_rank_pool(limit=30)
+    except Exception:
+        pass
+        
+    try:
+        # 3. 預熱精選題材庫
+        analyze_curated_theme_stocks()
+    except Exception:
+        pass
+
+# 每個 Session 僅在背景啟動一次預熱線程，不佔用前端渲染時間
+if "has_preloaded_cache" not in st.session_state:
+    st.session_state.has_preloaded_cache = True
+    bg_thread = threading.Thread(target=_background_preload_task, daemon=True)
+    bg_thread.start()

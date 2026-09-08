@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 APP_TITLE = "台股戰情室"
-APP_VERSION = "v4.3.1 Elite"
+APP_VERSION = "v4.3.2 Elite"
 APP_ICON = "📈"
 
 MACRO_TICKERS = {

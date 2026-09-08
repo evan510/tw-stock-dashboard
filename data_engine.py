@@ -256,13 +256,18 @@ def get_stock_news(keyword, max_items=4):
     try:
         url = f"https://news.google.com/rss/search?q={keyword}+台股+股票&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         res = requests.get(url, timeout=5)
-        soup = BeautifulSoup(res.content, features='xml')
-        items = soup.findAll('item')[:max_items]
-        for item in items:
-            title = item.title.text
-            link = item.link.text
-            pub_date = item.pubDate.text[:16]
-            news_list.append({'title': title, 'link': link, 'date': pub_date})
+        if res.status_code == 200:
+            try:
+                soup = BeautifulSoup(res.content, features='xml')
+            except Exception:
+                soup = BeautifulSoup(res.content, features='html.parser')
+            items = soup.findAll('item')[:max_items]
+            for item in items:
+                title = item.title.text if item.title else ""
+                link = item.link.text if item.link else ""
+                pub_date = item.pubDate.text[:16] if item.pubDate else ""
+                if title:
+                    news_list.append({'title': title, 'link': link, 'date': pub_date})
     except Exception:
         pass
     return news_list

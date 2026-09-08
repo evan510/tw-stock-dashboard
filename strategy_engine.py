@@ -6,9 +6,12 @@ from data_engine import (
     get_stock_history,
     get_twse_market_active_stocks,
     get_top_investment_trust_stocks,
+    get_institutional_streak_stocks,
+    scan_theme_catalyst_news,
     get_stock_news,
     resolve_stock
 )
+from custom_pool_manager import load_custom_pool
 import config
 
 # ================= 1. 大盤體質評分 (Market Regime Score) =================
@@ -279,6 +282,108 @@ def run_ai_deep_analysis(query_input):
     vol_ratio = round(vol / (vol_ma20 + 1e-9), 2)
     rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
     
+    signal, color, advice, stop_loss, t1, t2, rr1, rr2, rs, pattern = evaluate_entry_status(
+        df, last, prev, regime['score'], regime['twii_pct20']
+    )
+    
+    # --- AI 深度多維度綜合診斷評分系統 (0 ~ 100 分) ---
+    ai_score = 50
+    diagnosis_tags = []
+    
+    # 1. 均線位階與多空型態 (30分)
+    if close > ma20:
+        ai_score += 15
+        diagnosis_tags.append("月線生命線多頭")
+    else:
+        ai_score -= 20
+        diagnosis_tags.append("月線破線偏空")
+        
+    if ma5 > ma10 and ma10 > ma20:
+        ai_score += 15
+        diagnosis_tags.append("短期均線多頭排列")
+    elif ma5 < ma10 and ma10 < ma20:
+        ai_score -= 15
+        diagnosis_tags.append("短期均線空頭排列")
+        
+    # 2. 量能與主力攻擊 (25分)
+    if vol_ratio >= 1.5 and pct_change > 0:
+        ai_score += 15
+        diagnosis_tags.append("放量攻擊")
+    elif vol_ratio >= 1.5 and pct_change < 0:
+        ai_score -= 15
+        diagnosis_tags.append("爆量調節")
+    elif vol_ratio < 0.7:
+        diagnosis_tags.append("量縮沈澱")
+        
+    # 3. RS 相對大盤強度 (20分)
+    if rs > 5.0:
+        ai_score += 15
+        diagnosis_tags.append("強於大盤(領頭羊)")
+    elif rs < -5.0:
+        ai_score -= 15
+        diagnosis_tags.append("弱於大盤(落後股)")
+        
+    # 4. RSI 指標位階 (15分)
+    if 50 <= rsi <= 72:
+        ai_score += 10
+        diagnosis_tags.append("RSI強勢黃金區")
+    elif rsi > 78:
+        ai_score -= 5
+        diagnosis_tags.append("短線指標過熱")
+    elif rsi < 35:
+        ai_score -= 10
+        diagnosis_tags.append("指標超跌弱勢")
+        
+    # 5. 老王戰法加分
+    oldwang_metrics = evaluate_oldwang_strategy(sym)
+    if oldwang_metrics:
+        if oldwang_metrics.get('is_wan_li'):
+            ai_score += 10
+            diagnosis_tags.append("老王萬里無雲")
+        if oldwang_metrics.get('is_buy_black'):
+            ai_score += 10
+            diagnosis_tags.append("老王買黑不買紅點")
+
+    ai_score = int(min(max(ai_score, 10), 99))
+    
+    # 操盤訊號燈號判定 (action_signal)
+    if "TOO EXTENDED" in signal or "過度延伸" in signal or rsi > 80:
+        action_signal = "⚠️ 過熱警戒 (嚴禁追高 / 分批停利)"
+        signal_color = "#f59e0b"
+        signal_bg = "rgba(245, 158, 11, 0.15)"
+        signal_badge = "OVEREXTENDED"
+    elif "BUY" in signal or (close > ma20 and vol_ratio >= 1.3 and pct_change >= 1.5):
+        action_signal = "🟢 建議買進 (動能浮現 / 順勢介入)"
+        signal_color = "#22c55e"
+        signal_bg = "rgba(34, 197, 94, 0.15)"
+        signal_badge = "STRONG BUY"
+    elif close < ma20 or "AVOID" in signal:
+        action_signal = "🔴 建議賣出 (跌破防守 / 避開弱勢)"
+        signal_color = "#ef4444"
+        signal_bg = "rgba(239, 68, 68, 0.15)"
+        signal_badge = "SELL / EXIT"
+    else:
+        action_signal = "🟡 觀望蓄勢 (多空拉鋸 / 等待表態)"
+        signal_color = "#3b82f6"
+        signal_bg = "rgba(59, 130, 246, 0.15)"
+        signal_badge = "NEUTRAL / WATCH"
+        
+    # 自動合成 AI 深度操盤講評
+    ai_analysis_narrative = f"【AI 量化深度評析】\n"
+    ai_analysis_narrative += f"• 當前綜合技術體質評分為 {ai_score} 分，市場行動燈號為「{action_signal}」。\n"
+    if close > ma20:
+        ai_analysis_narrative += f"• 股價站穩 20MA 生命線 (${ma20}) 之上，短中期架構偏多，若量能持續放大則具向上攻堅動能。"
+    else:
+        ai_analysis_narrative += f"• 股價失守 20MA 生命線 (${ma20})，短線轉為空方控盤，技術面有測底疑慮，不宜過早抄底。"
+    if vol_ratio >= 1.5:
+        ai_analysis_narrative += f"今日成交量顯著放大至均量的 {vol_ratio} 倍，籌碼交換頻繁。"
+    elif vol_ratio < 0.7:
+        ai_analysis_narrative += f"成交量急縮（僅均量 {vol_ratio} 倍），浮額正在沉澱，耐心靜待突破起漲點。"
+    if rs > 0:
+        ai_analysis_narrative += f" 相對加權指數強勢 (+{rs}%)，具備主流股特質。"
+    else:
+        ai_analysis_narrative += f" 相對加權指數落後 ({rs}%)，需留意大盤拉回時的補跌風險。"
+
     if vol_ratio >= 1.5 and pct_change >= 2.0:
         buying_power = "🔥 主力強攻掃貨（短線動能極度充沛）"
         vol_structure = "突破長紅攻擊型態，短線量能噴發，市場關注度頂峰。"
@@ -292,17 +397,16 @@ def run_ai_deep_analysis(query_input):
         buying_power = "⚖️ 換手常態（區間運行）"
         vol_structure = "成交量接近 20 日均量，技術指標維持常態。"
         
-    signal, color, advice, stop_loss, t1, t2, rr1, rr2, rs, pattern = evaluate_entry_status(
-        df, last, prev, regime['score'], regime['twii_pct20']
-    )
     news = get_stock_news(resolved_name, max_items=4)
-    oldwang_metrics = evaluate_oldwang_strategy(sym)
     
     return {
         'symbol': sym, 'name': resolved_name, 'close': close, 'pct_change': pct_change,
         'high': high_price, 'low': low_price, 'ma5': ma5, 'ma10': ma10, 'ma20': ma20, 'ma60': ma60,
         'vol': vol, 'vol_ratio': vol_ratio, 'rsi': rsi, 'buying_power': buying_power,
-        'vol_structure': vol_structure, 'ai_verdict': signal, 'entry_zone': f"${round(close * 0.99, 1)} ~ ${close}",
+        'vol_structure': vol_structure, 'ai_verdict': signal, 'action_signal': action_signal,
+        'signal_color': signal_color, 'signal_bg': signal_bg, 'signal_badge': signal_badge,
+        'ai_score': ai_score, 'diagnosis_tags': diagnosis_tags, 'ai_narrative': ai_analysis_narrative,
+        'entry_zone': f"${round(close * 0.99, 1)} ~ ${close}",
         'stop_loss': stop_loss, 'target1': t1, 'target2': t2, 'rr1': rr1, 'rr2': rr2, 'rs_factor': rs,
         'pattern': pattern, 'news': news, 'market_regime': regime, 'oldwang': oldwang_metrics
     }, None
@@ -352,3 +456,174 @@ def analyze_and_rank_pool(limit=30):
         })
     rankings.sort(key=lambda x: x['score'], reverse=True)
     return rankings
+
+# ================= 5. 短線 5~20% 題材催化與法人連買狙擊模型 =================
+@st.cache_data(ttl=900, show_spinner=False)
+def get_short_term_catalyst_picks(limit=30):
+    """
+    短線 5~20% 獲利空間狙擊演算法：
+    1. 法人連買/波段鎖碼
+    2. 強勢題材關聯
+    3. 量價動能突破或老王回測買黑
+    4. 自動計算短線防守 (-3%~-4%)、T1目標 (+6%~+8%)、T2波段目標 (+15%~+22%)
+    5. 產出操作燈號（🟢 建議買進 / 🟡 觀望蓄勢 / 🔴 偏空賣出）
+    """
+    streak_stocks = get_institutional_streak_stocks(limit=50)
+    results = []
+    
+    # 候選池：1. 法人連買 2. 市場活躍股 3. 上櫃/興櫃生技重點股 4. 自選池
+    candidates = {}
+    for sym, meta in streak_stocks.items():
+        candidates[sym] = meta
+        
+    # 納入全市場活躍熱門股
+    active_hot = get_twse_market_active_stocks(limit=35)
+    for h in active_hot:
+        if h['symbol'] not in candidates:
+            candidates[h['symbol']] = {
+                'name': h['name'], 'streak_days': 1,
+                'latest_buy_vol': int(h.get('trade_vol', 0) / 1000),
+                'total_streak_vol': int(h.get('trade_vol', 0) / 1000),
+                'streak_type': '⚡ 動能爆量焦點'
+            }
+
+    # 納入上櫃與興櫃重點生技族群 (泰合、仁新、藥華藥、保瑞、美時、順藥、合一、康霈等)
+    biotech_focus = [
+        ('6467', '泰合生技'), ('6696', '仁新'), ('6446', '藥華藥'), ('6472', '保瑞'),
+        ('1795', '美時'), ('6535', '順藥'), ('4743', '合一'), ('6919', '康霈'),
+        ('6785', '昱展新藥'), ('6617', '共信-KY'), ('4147', '中裕'), ('4174', '浩鼎'),
+        ('4726', '永昕'), ('6875', '國邑*'), ('4771', '望隼'), ('6491', '晶碩')
+    ]
+    for b_sym, b_name in biotech_focus:
+        if b_sym not in candidates:
+            candidates[b_sym] = {
+                'name': b_name, 'streak_days': 1,
+                'latest_buy_vol': 500,
+                'total_streak_vol': 500,
+                'streak_type': '🧬 生技新藥強勢題材'
+            }
+            
+    # 納入使用者自選追蹤池
+    user_pool = load_custom_pool()
+    for cp in user_pool:
+        c_sym = cp['symbol']
+        if c_sym not in candidates:
+            candidates[c_sym] = {
+                'name': cp.get('name', c_sym), 'streak_days': 1,
+                'latest_buy_vol': 500,
+                'total_streak_vol': 500,
+                'streak_type': '⭐ 核心自選追蹤'
+            }
+
+    for sym, meta in candidates.items():
+        df = get_stock_history(sym, period='3mo')
+        if df.empty or len(df) < 5:
+            continue
+            
+        last = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) >= 2 else last
+        close = round(float(last['Close']), 2)
+        open_p = round(float(last['Open']), 2)
+        prev_close = float(prev['Close'])
+        pct_change = round(((close - prev_close) / (prev_close + 1e-9)) * 100, 2)
+        
+        ma5 = round(float(last['5MA']), 2) if ('5MA' in last and pd.notnull(last['5MA'])) else close
+        ma10 = round(float(last['10MA']), 2) if ('10MA' in last and pd.notnull(last['10MA'])) else close
+        ma20 = round(float(last['20MA']), 2) if ('20MA' in last and pd.notnull(last['20MA'])) else close
+        vol = float(last['Volume'])
+        vol_ma5 = float(last['Vol_MA5']) if ('Vol_MA5' in last and pd.notnull(last['Vol_MA5'])) else vol
+        vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
+        
+        # 短線分數評估 (滿分 100)
+        short_score = 50
+        tags = []
+        
+        # 1. 均線發散多頭排列
+        if close > ma5 and ma5 > ma10 and ma10 > ma20:
+            short_score += 20
+            tags.append("均線多頭發散")
+        elif close > ma20:
+            short_score += 10
+            tags.append("站穩月線")
+        else:
+            short_score -= 25  # 破月線直接大幅扣分
+            
+        # 2. 籌碼或題材鎖碼力道
+        streak_days = meta.get('streak_days', 1)
+        streak_type = meta.get('streak_type', '法人買進')
+        
+        if '生技' in streak_type or '自選' in streak_type:
+            short_score += 15
+            tags.append(f"🔥 {streak_type}")
+            
+        if streak_days >= 3:
+            short_score += 20
+            tags.append(f"法人連買 {streak_days} 天")
+        elif streak_days >= 2:
+            short_score += 10
+            tags.append(f"法人連買 2 天")
+        elif meta.get('latest_buy_vol', 0) >= 1000:
+            short_score += 15
+            tags.append("單日千張大單")
+            
+        # 3. 妖股量能異動與短線爆發型態
+        is_black_tested = (close < open_p) and (abs(close - ma5)/ma5 <= 0.02) and (vol < vol_ma5 * 1.1)
+        is_breakout = (close >= float(df['High'].iloc[-10:-1].max())) if len(df) >= 10 else False
+        is_monster_vol = (vol_ratio >= 2.0 and pct_change >= 4.0)  # 妖股爆量長紅異動
+        
+        if is_monster_vol:
+            short_score += 25
+            tags.append("⚡ 飆風妖股放量急攻")
+            trigger_type = "妖股爆量起漲 (短線動能極強)"
+        elif is_black_tested:
+            short_score += 15
+            tags.append("🎯 買黑回測守穩(高盈虧比)")
+            trigger_type = "買黑不買紅 (回測守穩 5MA)"
+        elif is_breakout and vol_ratio >= 1.5:
+            short_score += 15
+            tags.append("🚀 突破前高放量")
+            trigger_type = "動能突破前高"
+        else:
+            trigger_type = "蓄勢整理"
+            
+        # 4. 判斷操作建議燈號
+        if close < ma20 or short_score < 50:
+            action_signal = "🔴 建議賣出 / 觀望"
+        elif short_score >= 75 and (is_monster_vol or is_black_tested or is_breakout):
+            action_signal = "🟢 強力買進"
+        elif short_score >= 60 and close >= ma5:
+            action_signal = "🟢 建議買進"
+        else:
+            action_signal = "🟡 觀望蓄勢"
+            
+        # 計算短線 5~20% 目標價與嚴格防守價
+        stop_loss = round(max(close * 0.965, min(ma5 * 0.99, close * 0.95)), 2)
+        target1 = round(close * 1.07, 2)   # T1: +7% 短線先跑一半
+        target2 = round(close * 1.18, 2)   # T2: +18% 波段主升段
+        
+        risk_per_share = max(close - stop_loss, 0.1)
+        reward_t1 = round((target1 - close) / risk_per_share, 1)
+        reward_t2 = round((target2 - close) / risk_per_share, 1)
+        
+        results.append({
+            'symbol': sym,
+            'name': meta['name'],
+            'close': close,
+            'pct_change': pct_change,
+            'short_score': min(max(short_score, 0), 100),
+            'streak_days': streak_days,
+            'streak_type': streak_type,
+            'vol_ratio': vol_ratio,
+            'trigger_type': trigger_type,
+            'action_signal': action_signal,
+            'stop_loss': stop_loss,
+            'stop_loss_pct': round(((stop_loss - close)/close)*100, 1),
+            'target1': target1,
+            'target2': target2,
+            'reward_t1': reward_t1,
+            'reward_t2': reward_t2,
+            'tags': tags
+        })
+            
+    results.sort(key=lambda x: x['short_score'], reverse=True)
+    return results[:limit]

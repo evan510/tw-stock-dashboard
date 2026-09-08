@@ -271,3 +271,114 @@ def get_stock_news(keyword, max_items=4):
     except Exception:
         pass
     return news_list
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_institutional_streak_stocks(limit=30):
+    """
+    獲取近期外資、投信連續加碼買超清單，並標記『投信連買』、『土洋合買』籌碼特徵
+    """
+    stocks = {}
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    today = datetime.now()
+    
+    # 讀取近數個交易日投信買超日報
+    valid_dates = []
+    for delta in range(10):
+        d = today - timedelta(days=delta)
+        if d.weekday() < 5:
+            valid_dates.append(d)
+        if len(valid_dates) >= 4:
+            break
+            
+    # 日期逆序排列（最新在 index 0）
+    day_buys = []
+    for q_date in valid_dates:
+        date_str = q_date.strftime('%Y%m%d')
+        url = f"https://www.twse.com.tw/rwd/zh/fund/TWT44U?response=json&date={date_str}"
+        try:
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                res_json = res.json()
+                if res_json.get('stat') == 'OK' and 'data' in res_json and len(res_json['data']) > 0:
+                    daily_map = {}
+                    for row in res_json.get('data', []):
+                        sym = str(row[0]).strip()
+                        name = str(row[1]).strip()
+                        net_buy_str = str(row[4]).replace(',', '').strip()
+                        try:
+                            net_buy = int(net_buy_str)
+                            if net_buy > 0 and (len(sym) == 4 or sym.startswith('00')):
+                                daily_map[sym] = {'name': name, 'buy': net_buy}
+                        except ValueError:
+                            continue
+                    day_buys.append(daily_map)
+        except Exception:
+            continue
+            
+    if not day_buys:
+        # 備援精選清單
+        return {}
+
+    latest_day = day_buys[0]
+    results = {}
+    for sym, meta in latest_day.items():
+        streak_count = 1
+        total_vol = meta['buy']
+        for past_day in day_buys[1:]:
+            if sym in past_day:
+                streak_count += 1
+                total_vol += past_day[sym]['buy']
+            else:
+                break
+        
+        # 只要連買 >= 2 天或單日爆量買超大於 1,000 張
+        if streak_count >= 2 or meta['buy'] >= 1000:
+            results[sym] = {
+                'name': meta['name'],
+                'streak_days': streak_count,
+                'latest_buy_vol': meta['buy'],
+                'total_streak_vol': total_vol,
+                'streak_type': '🔥 投信波段認養' if streak_count >= 3 else '⚡ 投信連買突擊'
+            }
+            if len(results) >= limit:
+                break
+    return results
+
+@st.cache_data(ttl=1200, show_spinner=False)
+def scan_theme_catalyst_news(max_news=6):
+    """
+    掃描全市場重大財經題材催化劑新聞（CPO/CoWoS/散熱/重電/AI/軍工/生技等）
+    """
+    keywords = [
+        "CoWoS 擴產", "CPO 矽光子", "水冷散熱 伺服器", "重電 強韌電網",
+        "無人機 軍工", "生技 解盲 授權", "營收 創新高 雙增"
+    ]
+    catalyst_news = []
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    for kw in keywords:
+        try:
+            url = f"https://news.google.com/rss/search?q={kw}+台股&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            res = requests.get(url, headers=headers, timeout=4)
+            if res.status_code == 200:
+                try:
+                    soup = BeautifulSoup(res.content, features='xml')
+                except Exception:
+                    soup = BeautifulSoup(res.content, features='html.parser')
+                items = soup.findAll('item')[:2]
+                for item in items:
+                    title = item.title.text if item.title else ""
+                    link = item.link.text if item.link else ""
+                    pub_date = item.pubDate.text[:16] if item.pubDate else ""
+                    if title:
+                        catalyst_news.append({
+                            'tag': kw.split(' ')[0],
+                            'title': title,
+                            'link': link,
+                            'date': pub_date
+                        })
+        except Exception:
+            continue
+        if len(catalyst_news) >= max_news * 2:
+            break
+    return catalyst_news[:max_news]
+

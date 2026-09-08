@@ -9,6 +9,8 @@ from data_engine import (
     get_institutional_investors_summary,
     get_stock_history,
     get_stock_news,
+    get_institutional_streak_stocks,
+    scan_theme_catalyst_news,
     resolve_stock
 )
 from strategy_engine import (
@@ -18,7 +20,8 @@ from strategy_engine import (
     analyze_custom_pool_stocks,
     analyze_curated_theme_stocks,
     run_ai_deep_analysis,
-    analyze_and_rank_pool
+    analyze_and_rank_pool,
+    get_short_term_catalyst_picks
 )
 from custom_pool_manager import load_custom_pool, add_to_custom_pool, remove_from_custom_pool
 from portfolio_manager import load_portfolio, add_holding, remove_holding, evaluate_holdings
@@ -47,6 +50,56 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     
+    /* Streamlit 頂部狀態列維持適度透明高度，使 Deploy 與收折箭頭 (<<) 正常完整顯示不被切到 */
+    header[data-testid="stHeader"] {
+        background: rgba(15, 19, 26, 0.75) !important;
+        backdrop-filter: blur(8px) !important;
+        height: 2.8rem !important;
+    }
+    
+    /* 調整主畫面頂部間距，避開頂部 Deploy 列並與左側頂部完美等高對齊 */
+    .block-container {
+        padding-top: 3.6rem !important;
+        padding-bottom: 2rem !important;
+    }
+    
+    /* 側邊欄頂部 Header 保留收折 ICON 專用高度，垂直居中排布 */
+    [data-testid="stSidebarHeader"] {
+        padding-top: 0.6rem !important;
+        padding-bottom: 0.4rem !important;
+    }
+
+    /* 讓側邊欄收折按鈕 (<<) 始終常駐顯示，不必等滑鼠懸停才出現 */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapseButton"] button,
+    [data-testid="stSidebarHeader"] button {
+        opacity: 0.85 !important;
+        visibility: visible !important;
+        display: inline-flex !important;
+        transition: opacity 0.2s ease, transform 0.2s ease !important;
+    }
+    [data-testid="stSidebarCollapseButton"] button:hover,
+    [data-testid="stSidebarHeader"] button:hover {
+        opacity: 1 !important;
+        transform: scale(1.1);
+    }
+    
+    /* 側邊欄主體內容頂部間距 */
+    [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+        padding-top: 0.8rem !important;
+    }
+    
+    /* 專業科技感邊框：曜石金/琥珀橙漸層發光（與下方藍色選單做出層次區別） */
+    .sidebar-header-card {
+        background: linear-gradient(135deg, rgba(20, 24, 33, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%);
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        border-top: 2px solid #f59e0b;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 12px rgba(245, 158, 11, 0.12);
+    }
+
     [data-testid="stSidebar"] {
         background-color: #0f131a;
         border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -104,7 +157,7 @@ st.markdown("""
     
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 1rem !important;
+            padding-top: 0.6rem !important;
             padding-left: 0.8rem !important;
             padding-right: 0.8rem !important;
         }
@@ -112,9 +165,9 @@ st.markdown("""
             padding: 14px 14px !important;
             margin-bottom: 12px !important;
         }
-        h1 { font-size: 1.5rem !important; }
-        h2 { font-size: 1.25rem !important; }
-        h3 { font-size: 1.1rem !important; }
+        h1 { font-size: 1.35rem !important; margin-top: 0 !important; }
+        h2 { font-size: 1.15rem !important; }
+        h3 { font-size: 1.0rem !important; }
         .stMetric { padding: 8px 10px !important; }
     }
     
@@ -129,6 +182,7 @@ st.markdown("""
         margin-bottom: 4px;
     }
     .pill-blue { background: rgba(59, 130, 246, 0.18); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
+    .pill-gold { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
     .pill-buy { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
     .pill-hot { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
     .pill-warn { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
@@ -138,18 +192,30 @@ st.markdown("""
         font-size: 1.4rem !important;
         font-weight: 700 !important;
     }
+    
+    /* 調整 h1 標題與左側 Sidebar 卡片上緣完全齊平 */
+    h1 {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+        line-height: 1.2 !important;
+        letter-spacing: -0.5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- 側邊欄導航 (新增第3頁老王戰法) -----------------
+# ----------------- 側邊欄頂部專業儀表美化 (曜石金發光卡片) -----------------
 st.sidebar.markdown(
     f"""
-    <div style="padding: 4px 0 10px 0;">
-        <h2 style="margin:0; font-size:1.35rem; font-weight:800; color:#ffffff; letter-spacing:0.5px;">
-            {config.APP_ICON} {config.APP_TITLE}
-        </h2>
-        <div style="margin-top:6px;">
-            <span class="pill pill-blue">RELEASE {config.APP_VERSION}</span>
+    <div class="sidebar-header-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="margin:0; font-size:1.25rem; font-weight:800; color:#f8fafc; letter-spacing:0.5px;">
+                {config.APP_ICON} {config.APP_TITLE}
+            </h2>
+            <span class="pill pill-gold" style="margin:0;">{config.APP_VERSION}</span>
+        </div>
+        <div style="display:flex; align-items:center; margin-top:8px; gap:6px;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:{'#22c55e' if is_tw_trading else '#f59e0b'}; box-shadow:0 0 8px {'#22c55e' if is_tw_trading else '#f59e0b'};"></span>
+            <span style="font-size:0.8rem; color:#cbd5e1; font-weight:500;">{market_time_tag}</span>
         </div>
     </div>
     """, 
@@ -159,8 +225,9 @@ st.sidebar.markdown(
 menu = st.sidebar.radio(
     "功能導航：",
     [
-        "🔥 1. 熱門焦點與短線突破 (含大盤評分與RS)",
-        "🧠 2. AI 個股量化與部位試算 (雙階停利+1%風控)",
+        "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)",
+        "🩺 1. 個股診斷室 (AI 深度量化與燈號)",
+        "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)",
         "👑 3. 老王均線獨門戰法 (萬里無雲/買黑不買紅)",
         "🎯 4. 投信鎖碼波段選股榜",
         "🌐 5. 盤後宏觀與法人籌碼",
@@ -172,7 +239,6 @@ menu = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"時段狀態：{market_time_tag}")
 if st.sidebar.button("🔄 同步刷新數據", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
@@ -180,9 +246,361 @@ if st.sidebar.button("🔄 同步刷新數據", use_container_width=True):
 st.sidebar.caption(f"系統時間：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.sidebar.caption("✅ 支援手機 RWD 直式介面操作")
 
-# ================= 頁面 1：熱門焦點與短線突破 (含大盤評分與RS) =================
-if menu == "🔥 1. 熱門焦點與短線突破 (含大盤評分與RS)":
+# ================= 頁面 0：短線題材與法人連買 (5~20% 狙擊槍) =================
+if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
+    st.title("🚀 短線題材與法人連買狙擊槍 (波段 5% ~ 20%)")
+    st.caption("專為短線波段操作設計：鎖定【近期強勢題材催化】+【外資/投信連買鎖碼】+【回測均線不破或放量起漲點】")
+
+    # 可折疊點擊的 SOP 實戰操盤時間守則卡片
+    with st.expander("💡 【實戰必讀】本頁短線狙擊最佳使用時機與操盤 SOP（點擊展開/收合）", expanded=False):
+        sop_c1, sop_c2, sop_c3 = st.columns(3)
+        with sop_c1:
+            st.markdown("""
+            <div class="rwd-card" style="border-left: 4px solid #3b82f6; height: 100%;">
+                <h4 style="margin:0; color:#60a5fa;">🥇 下午 15:30 ~ 21:00</h4>
+                <p style="font-size:0.85rem; color:#94a3b8; margin:2px 0 8px 0;">【盤後選股做功課，最關鍵時段 ⭐⭐⭐】</p>
+                <ul style="font-size:0.85rem; color:#cbd5e1; padding-left:18px; margin:0;">
+                    <li><b>官方籌碼出爐</b>：證交所與櫃買中心 15:00~15:30 公告最新買賣超，此時籌碼最精確。</li>
+                    <li><b>K 線定型防騙</b>：收盤價已定，均線與老王買黑回測守穩點無所遁形。</li>
+                    <li><b>核心動作</b>：挑出 1~3 檔 <b>🟢 買進燈號</b>，記下停損點與進場區。</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        with sop_c2:
+            st.markdown("""
+            <div class="rwd-card" style="border-left: 4px solid #f59e0b; height: 100%;">
+                <h4 style="margin:0; color:#fbbf24;">🥈 早上 08:30 ~ 09:00</h4>
+                <p style="font-size:0.85rem; color:#94a3b8; margin:2px 0 8px 0;">【盤前題材確認與美股連動 ⭐⭐】</p>
+                <ul style="font-size:0.85rem; color:#cbd5e1; padding-left:18px; margin:0;">
+                    <li><b>核對美股走勢</b>：查看輝達 (NVDA)、台積電 ADR 與費半夜盤漲跌。</li>
+                    <li><b>最新利多新聞</b>：檢視模組 B 晨間最新公布的營收或題材利多。</li>
+                    <li><b>核心動作</b>：擬定今日預估掛單價位，確認大盤短線環境評分。</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        with sop_c3:
+            st.markdown("""
+            <div class="rwd-card" style="border-left: 4px solid #22c55e; height: 100%;">
+                <h4 style="margin:0; color:#4ade80;">🎯 開盤 09:00 ~ 09:30</h4>
+                <p style="font-size:0.85rem; color:#94a3b8; margin:2px 0 8px 0;">【開盤確認發動，果斷扣板機 ⭐⭐】</p>
+                <ul style="font-size:0.85rem; color:#cbd5e1; padding-left:18px; margin:0;">
+                    <li><b>開在平盤或量縮拉回</b>：符合進場區，果斷分批切入。</li>
+                    <li><b>跳空大漲 (>+5%)</b>：嚴禁追高，耐心等待盤中拉回守穩再進。</li>
+                    <li><b>雙階停利紀律</b>：達 T1 (+7%) 先出一半保本；剩餘抱到破 5MA。</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st_tab1, st_tab2, st_tab3 = st.tabs([
+        "🎯 模組 A：短線 5~20% 點位狙擊榜",
+        "📰 模組 B：即時題材催化劑新聞",
+        "💰 模組 C：法人連續買超鎖碼明細"
+    ])
+
+    with st_tab1:
+        st.subheader("🎯 短線 5% ~ 20% 高勝率精準進出場點位榜")
+        st.caption("依據 3~5 日投信鎖碼、多頭排列與量價發動結構自動試算：嚴格停損 (約 -3.5%)、第一目標 (+7%)、波段目標 (+18%)")
+        with st.spinner("正在掃描法人連續加碼、生技題材與妖股異動標的..."):
+            picks = get_short_term_catalyst_picks(limit=30)
+
+        if picks:
+            # 頂部統計指標
+            top_c1, top_c2, top_c3, top_c4 = st.columns(4)
+            top_c1.metric("🎯 狙擊標的掃描", f"{len(picks)} 檔")
+            avg_score = round(sum(x.get('short_score', 60) for x in picks) / len(picks), 1)
+            top_c2.metric("⭐ 平均短線動能評分", f"{avg_score} 分")
+            buy_signal_c = sum(1 for x in picks if "買進" in x.get('action_signal', '買進'))
+            top_c3.metric("🟢 買進訊號燈", f"{buy_signal_c} 檔")
+            streak_3d_count = sum(1 for x in picks if x.get('streak_days', 1) >= 2 or "生技" in x.get('streak_type', ''))
+            top_c4.metric("🔥 鎖碼/強勢題材", f"{streak_3d_count} 檔")
+
+            st.markdown("#### 🔥 前 10 大短線精選核心卡片")
+            top10 = picks[:10]
+            # 每列呈現 2 張大卡片，手機上自然垂直排列，寬螢幕兩欄清晰大器
+            for row_i in range(0, len(top10), 2):
+                c_cols = st.columns(2)
+                for col_j in range(2):
+                    if row_i + col_j < len(top10):
+                        p = top10[row_i + col_j]
+                        with c_cols[col_j]:
+                            act_sig = p.get('action_signal', '🟢 建議買進')
+                            pill_light = "pill-buy" if "買進" in act_sig else ("pill-hot" if "賣出" in act_sig else "pill-warn")
+                            st.markdown(f"""
+                            <div class="rwd-card">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <h3 style="margin:0;">{p['name']} <span style="font-size:0.9rem; color:gray;">({p['symbol']})</span></h3>
+                                        <span class="pill {pill_light}">{act_sig}</span>
+                                        <span class="pill pill-blue">{p.get('streak_type', '短線動能')}</span>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        <h2 style="margin:0; color:#ef4444;">${p['close']} <span style="font-size:0.95rem;">{p['pct_change']:+}%</span></h2>
+                                        <span style="font-size:0.85rem; color:#60a5fa; font-weight:700;">評分: {p.get('short_score', 60)} 分</span>
+                                    </div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px; margin:8px 0;">
+                                    <span style="font-size:0.82rem; color:#60a5fa;">🎯 <b>型態</b>：{p.get('trigger_type', '蓄勢')}</span> ｜ 
+                                    <span style="font-size:0.82rem; color:#cbd5e1;">📊 <b>量能</b>：均量 <b>{p.get('vol_ratio', 1.0)}x</b></span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-top:6px;">
+                                    <span style="color:#f87171;">🛑 <b>防守停損</b>：${p['stop_loss']} ({p.get('stop_loss_pct', -3.5)}%)</span>
+                                    <span style="color:#4ade80;">🎯 <b>T1 目標 (+7%)</b>：${p['target1']}</span>
+                                    <span style="color:#fbbf24;">🚀 <b>T2 波段 (+18%)</b>：${p['target2']}</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### 📋 短線 5% ~ 20% 狙擊總榜單 Top 30 (含操作燈號與盈虧比)")
+            df_picks = pd.DataFrame([
+                {
+                    '操作燈號': x.get('action_signal', '🟢 建議買進'),
+                    '代號': x['symbol'],
+                    '名稱': x['name'],
+                    '現價': x['close'],
+                    '漲跌幅': f"{x['pct_change']:+}%",
+                    '短線評分': x.get('short_score', 60),
+                    '籌碼與題材特徵': f"{x.get('streak_type', '短線動能')} ({x.get('streak_days', 1)}日)",
+                    '量能倍數': f"{x.get('vol_ratio', 1.0)}x",
+                    '短線發動型態': x.get('trigger_type', '蓄勢'),
+                    '🛑 防守停損價': f"${x['stop_loss']} ({x.get('stop_loss_pct', -3.5)}%)",
+                    '🎯 T1 短線目標(+7%)': f"${x['target1']}",
+                    '🚀 T2 波段目標(+18%)': f"${x['target2']}",
+                    '盈虧比 (R/R)': f"{x.get('reward_t1', 2.0)} : 1"
+                } for x in picks
+            ])
+            st.dataframe(df_picks, use_container_width=True)
+        else:
+            st.info("今日全市場暫無符合短線狙擊條件之標的，建議短線多看少做，保留現金！")
+
+    with st_tab2:
+        st.subheader("📰 全市場即時重大題材催化劑焦點新聞")
+        st.caption("系統自動掃描市場焦點關鍵字：CPO 矽光子、CoWoS 先進封裝、水冷散熱、重電強韌電網、營收創新高、生技解盲授權等")
+        with st.spinner("抓取重大財經新聞催化劑中..."):
+            cat_news = scan_theme_catalyst_news(max_news=8)
+
+        if cat_news:
+            for item in cat_news:
+                st.markdown(f"""
+                <div class="rwd-card" style="padding:12px 16px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="pill pill-blue">🔥 題材：{item['tag']}</span>
+                        <small style="color:gray;">{item['date']}</small>
+                    </div>
+                    <h4 style="margin:6px 0;"><a href="{item['link']}" target="_blank" style="text-decoration:none; color:#f1f5f9;">{item['title']}</a></h4>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("暫無最新重大題材新聞。")
+
+    with st_tab3:
+        st.subheader("💰 證交所官方盤後法人連續買超名單")
+        st.caption("追蹤連續買超天數 2 天以上之主力吃貨軌跡")
+        streak_data = get_institutional_streak_stocks(limit=30)
+        if streak_data:
+            df_streak = pd.DataFrame([
+                {
+                    '代號': sym, '名稱': info['name'], '連買天數': f"{info['streak_days']} 天",
+                    '最新單日買超(張)': f"{info['latest_buy_vol']:,}",
+                    '累計連買總張數': f"{info['total_streak_vol']:,}",
+                    '法人特徵': info['streak_type']
+                } for sym, info in streak_data.items()
+            ])
+            st.dataframe(df_streak, use_container_width=True)
+        else:
+            st.info("連線證交所資料讀取中或今日盤後未有顯著連買。")
+
+# ================= 頁面 1：個股診斷室 (AI 深度量化與燈號) =================
+elif menu == "🩺 1. 個股診斷室 (AI 深度量化與燈號)":
+    st.title("🩺 個股診斷室 (AI 多空訊號與深度量化)")
+    st.caption("全方位 AI 操盤量化體檢：融合【趨勢均線】+【量價結構】+【RS大盤相對強度】+【老王防守紀律】+【買賣燈號與部位試算】")
+    
+    # 快捷熱門標的快速選取 (Quick Selector)
+    st.markdown("##### ⚡ 快速診斷熱門標的：")
+    quick_stocks = [
+        ("台積電", "2330"), ("鴻海", "2317"), ("聯發科", "2454"),
+        ("國泰永續高股息", "00878"), ("元大高股息", "0056"), ("元大台灣50", "0050"),
+        ("泰合生技", "6467"), ("仁新醫藥", "6696"), ("保瑞", "6472")
+    ]
+    
+    # 紀錄目前查詢字串在 session_state
+    if "diag_stock_query" not in st.session_state:
+        st.session_state.diag_stock_query = "2330"
+
+    cols_q = st.columns(len(quick_stocks))
+    for idx, (q_name, q_sym) in enumerate(quick_stocks):
+        with cols_q[idx]:
+            if st.button(f"{q_name}\n({q_sym})", key=f"btn_quick_{q_sym}", use_container_width=True):
+                st.session_state.diag_stock_query = q_sym
+                st.rerun()
+
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+    
+    col_in1, col_in2 = st.columns([3, 1])
+    with col_in1:
+        query_input = st.text_input(
+            "請輸入台股代號、ETF 或中文名稱：",
+            value=st.session_state.diag_stock_query,
+            help="支援上市櫃代號 (如 2330, 6467)、ETF (如 00878, 0050) 或中文名稱 (如 台積電, 泰合)"
+        ).strip()
+    with col_in2:
+        st.write("")
+        st.write("")
+        if st.button("🚀 啟動 AI 全方位診斷", type="primary", use_container_width=True):
+            st.session_state.diag_stock_query = query_input
+            st.rerun()
+        
+    if query_input:
+        with st.spinner(f"AI 操盤引擎正在全面掃描『{query_input}』之技術面、籌碼與量價結構..."):
+            data, err = run_ai_deep_analysis(query_input)
+            
+        if err:
+            st.error(err)
+        else:
+            # 取得防禦性預設值，防止熱重載時暫存模組版本不一致引發 KeyError
+            sig_color = data.get('signal_color', '#3b82f6')
+            sig_bg = data.get('signal_bg', 'rgba(59, 130, 246, 0.15)')
+            act_sig = data.get('action_signal', '🟡 觀望蓄勢 (多空拉鋸 / 等待表態)')
+            ai_sc = data.get('ai_score', 60)
+            ai_narr = data.get('ai_narrative', 'AI 深度分析數據運算中...')
+            diag_tags = data.get('diagnosis_tags', ['多空量化評估'])
+
+            # 1. 頂部核心總覽卡片 (含即時報價、評分與買賣燈號)
+            st.markdown(f"""
+            <div class="rwd-card" style="border-left: 6px solid {sig_color};">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <h1 style="margin:0; font-size:1.8rem;">{data['name']} <span style="font-size:1.1rem; color:#94a3b8;">({data['symbol']})</span></h1>
+                            <span class="pill pill-blue">AI 深度量化診斷</span>
+                            <span class="pill {'pill-purple' if data.get('rs_factor', 0) > 0 else 'pill-warn'}">RS: {data.get('rs_factor', 0):+}%</span>
+                        </div>
+                        <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                            {' '.join([f"<span class='pill pill-gold'>✓ {t}</span>" for t in diag_tags])}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <h1 style="margin:0; color:{'#ef4444' if data['pct_change'] >= 0 else '#22c55e'}; font-size:2.2rem; font-weight:800;">
+                            ${data['close']}
+                        </h1>
+                        <span style="font-size:1.05rem; font-weight:700; color:{'#ef4444' if data['pct_change'] >= 0 else '#22c55e'};">
+                            {data['pct_change']:+}% (今日最高: ${data.get('high', data['close'])} / 最低: ${data.get('low', data['close'])})
+                        </span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 2. 超醒目【AI 買賣訊號燈號】與【綜合健康評分】
+            st.markdown(f"""
+            <div style="background:{sig_bg}; border: 1.5px solid {sig_color}; border-radius:14px; padding:16px 20px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:0.85rem; color:#94a3b8; font-weight:600; letter-spacing:0.5px;">AI ACTION SIGNAL 操盤決策燈號</div>
+                    <h2 style="margin:4px 0 0 0; color:{sig_color}; font-weight:800;">
+                        {act_sig}
+                    </h2>
+                </div>
+                <div style="text-align:right;">
+                    <span style="font-size:0.85rem; color:#94a3b8; font-weight:600;">AI 綜合量化體質評分</span>
+                    <h2 style="margin:4px 0 0 0; color:#f8fafc; font-weight:800;">
+                        <span style="color:{sig_color}; font-size:2.2rem;">{ai_sc}</span> / 100
+                    </h2>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 3. AI 深度操盤講評卡片 (AI Analysis Narrative)
+            st.markdown(f"""
+            <div class="rwd-card" style="background: rgba(30, 41, 59, 0.45); border-color: rgba(96, 165, 250, 0.25);">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <span style="font-size:1.2rem;">🤖</span>
+                    <h4 style="margin:0; color:#60a5fa; font-weight:700;">AI 首席操盤手深度診斷評析</h4>
+                </div>
+                <p style="margin:0; font-size:0.92rem; line-height:1.6; color:#e2e8f0; white-space: pre-line;">
+{ai_narr}
+                </p>
+                <div style="margin-top:8px; font-size:0.85rem; color:#93c5fd; background:rgba(59, 130, 246, 0.1); padding:8px 12px; border-radius:8px;">
+                    👉 <b>操作指引</b>：{data.get('ai_verdict', '')} ｜ 當前技術型態：<b>{data.get('pattern', '')}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 4. 關鍵點位與風險報酬比卡片 (4欄)
+            p1, p2, p3, p4 = st.columns(4)
+            p1.success(f"📥 **建議進場區間**\n\n**{data['entry_zone']}**")
+            p2.error(f"🛑 **波段防守停損價**\n\n**`${data['stop_loss']}`**")
+            p3.info(f"🎯 **雙階獲利目標**\n\nT1: **`${data['target1']}`** (平倉50%)\nT2: **`${data['target2']}`** (讓利潤奔跑)")
+            p4.warning(f"⚖️ **風險報酬比 (R/R)**\n\nRR1: **{data['rr1']} : 1**\nRR2: **{data['rr2']} : 1**")
+            
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+            # 5. 多維度體檢雷達 (兩欄：量價與均線老王戰法)
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.markdown("#### 🔍 主力籌碼與成交量能體檢")
+                st.write(f"• **主力買盤狀態**：{data['buying_power']}")
+                st.write(f"• **今日成交量能**：約 **{data['vol']:,.0f} 股** ｜ 均量倍數：**{data['vol_ratio']} 倍**")
+                st.write(f"• **14日 RSI 位階**：**{data['rsi']}** ({'超買過熱' if data['rsi']>75 else ('超賣築底' if data['rsi']<30 else '健康常態')})")
+                st.write(f"• **結構判定**：{data['vol_structure']}")
+            with c_right:
+                st.markdown("#### 📈 均線位階與老王獨門戰法")
+                st.write(f"• 5MA：**${data['ma5']}** ｜ 10MA：**${data['ma10']}**")
+                st.write(f"• 20MA (生命線)：**${data['ma20']}** ｜ 60MA (季線)：**${data['ma60']}**")
+                
+                ow = data.get('oldwang')
+                if ow:
+                    st.write(f"• **老王均線雲況**：{ow['cloud_status']}")
+                    st.write(f"• **近20日大量K低點**：**${ow['max_vol_low']}** ({ow['max_vol_date']} 爆量，關鍵防守)")
+                    st.info(f"👉 **老王離場警報**：{ow['exit_alert']}")
+                else:
+                    if data['close'] > data['ma20']:
+                        st.success("✔ 股價站穩 20MA 生命線之上，多方結構完整。")
+                    else:
+                        st.error("✖ 股價跌破 20MA 月線生命線，短中期偏空整理。")
+
+            st.markdown("---")
+
+            # 6. 1% 帳戶風險部位試算機 (Position Sizer)
+            st.markdown("#### 🧮 1% 帳戶風險部位試算機 (Position Sizer)")
+            st.caption("依據嚴格交易風控紀律：單筆交易若被停損，絕對不虧損超過總帳戶資金的 1%，由停損距離精準反推可買進張數！")
+            
+            col_calc1, col_calc2 = st.columns(2)
+            with col_calc1:
+                account_capital = st.number_input("您的總本金帳戶金額 (元)：", min_value=10000.0, value=1000000.0, step=50000.0, key="diag_capital")
+            with col_calc2:
+                risk_pct = st.number_input("單筆最大承受風險比例 (%)：", min_value=0.5, max_value=3.0, value=1.0, step=0.1, key="diag_risk")
+                
+            max_risk_dollar = account_capital * (risk_pct / 100.0)
+            risk_per_share = max(data['close'] - data['stop_loss'], 0.1)
+            
+            if data['close'] > data['stop_loss'] and "過度延伸" not in data['ai_verdict']:
+                allowed_shares = int(max_risk_dollar // risk_per_share)
+                required_capital = round(allowed_shares * data['close'], 0)
+                capital_ratio = round((required_capital / account_capital) * 100, 1)
+                
+                c_s1, c_s2, c_s3, c_s4 = st.columns(4)
+                c_s1.metric("💡 建議建倉股數", f"{allowed_shares:,} 股", f"約 {round(allowed_shares/1000, 1)} 張")
+                c_s2.metric("🛑 若被停損最大虧損", f"-${max_risk_dollar:,.0f} 元", f"嚴格鎖定在 {risk_pct}%")
+                c_s3.metric("💰 需動用資金", f"${required_capital:,.0f} 元")
+                c_s4.metric("📊 佔總本金比率", f"{capital_ratio}%")
+                
+                if capital_ratio > 40.0:
+                    st.warning("⚠️ 提示：該筆交易動用超過 40% 總資金，請留意單一標的過度集中風險！")
+            else:
+                st.error("⚠️ 當前現價已逼近停損點或處於過度延伸區，風險報酬不對稱，系統建議建倉 0 股！")
+                
+            st.markdown("---")
+            st.markdown(f"#### 📰 【{data['name']}】最新重大即時新聞")
+            if data['news']:
+                for n in data['news']:
+                    st.markdown(f"• [{n['title']}]({n['link']}) — <small style='color:gray'>{n['date']}</small>", unsafe_allow_html=True)
+            else:
+                st.caption("暫無近期新聞快訊。")
+
+# ================= 頁面 2：熱門焦點與短線突破 (含大盤評分與RS) =================
+elif menu == "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)":
     st.title("🔥 市場熱門焦點股與短線突破量化評估")
+    st.caption("全市場成交量能掃描：即時掌握市場人氣資金聚集地、突破結構與自選題材池")
     
     m_regime = calculate_market_regime()
     st.markdown(f"""
@@ -313,100 +731,6 @@ if menu == "🔥 1. 熱門焦點與短線突破 (含大盤評分與RS)":
             } for x in curated_list
         ])
         st.dataframe(df_c, use_container_width=True)
-
-# ================= 頁面 2：AI 個股量化與部位試算 (雙階停利+1%風控) =================
-elif menu == "🧠 2. AI 個股量化與部位試算 (雙階停利+1%風控)":
-    st.title("🧠 個股 / ETF AI 深度量化診斷室")
-    st.caption("支援輸入上市櫃代號 (如 6467, 2330)、ETF (如 00878, 0050) 或中文名稱 (如 泰合, 仁新)")
-    
-    col_in1, col_in2 = st.columns([3, 1])
-    with col_in1:
-        query_input = st.text_input("請輸入台股/ETF 代號或名稱：", value="00878").strip()
-    with col_in2:
-        st.write("")
-        st.write("")
-        st.button("🚀 啟動 AI 深度分析", type="primary", use_container_width=True)
-        
-    if query_input:
-        with st.spinner(f"AI 操盤引擎正在全面掃描『{query_input}』之技術面與籌碼..."):
-            data, err = run_ai_deep_analysis(query_input)
-            
-        if err:
-            st.error(err)
-        else:
-            st.markdown(f"""
-            <div class="rwd-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <h2 style="margin:0;">{data['name']} <span style="font-size:1.2rem; color:gray;">({data['symbol']})</span></h2>
-                        <span class="pill pill-blue">AI 短線量化診斷報告</span>
-                        <span class="pill pill-purple">RS 相對大盤：{data['rs_factor']:+}%</span>
-                    </div>
-                    <div style="text-align:right;">
-                        <h1 style="margin:0; color:#ef4444;">${data['close']}</h1>
-                        <span style="color:#ef4444; font-weight:600;">+{data['pct_change']}%</span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown(f"### 🎯 短線操盤行動決策：**{data['ai_verdict']}** ｜ 型態：`{data['pattern']}`")
-            p1, p2, p3, p4 = st.columns(4)
-            p1.success(f"📥 **建議進場區間**\n\n**{data['entry_zone']}**")
-            p2.error(f"🛑 **波段防守停損價**\n\n**`${data['stop_loss']}`**")
-            p3.info(f"🎯 **雙階獲利目標**\n\nT1: **`${data['target1']}`** (平倉50%)\nT2: **`${data['target2']}`** (讓利潤奔跑)")
-            p4.warning(f"⚖️ **風險報酬比 (R/R)**\n\nRR1: **{data['rr1']} : 1**\nRR2: **{data['rr2']} : 1**")
-            
-            st.markdown("---")
-            st.markdown("#### 🧮 1% 帳戶風險部位試算機 (Position Sizer)")
-            st.caption("依據短線交易紀律：單筆虧損絕對不超過總本金的 1%，由停損距離嚴格反推可買股數！")
-            
-            col_calc1, col_calc2 = st.columns(2)
-            with col_calc1:
-                account_capital = st.number_input("您的總本金帳戶金額 (元)：", min_value=10000.0, value=1000000.0, step=50000.0)
-            with col_calc2:
-                risk_pct = st.number_input("單筆最大承受風險比例 (%)：", min_value=0.5, max_value=3.0, value=1.0, step=0.1)
-                
-            max_risk_dollar = account_capital * (risk_pct / 100.0)
-            risk_per_share = max(data['close'] - data['stop_loss'], 0.1)
-            
-            if data['close'] > data['stop_loss'] and "過度延伸" not in data['ai_verdict']:
-                allowed_shares = int(max_risk_dollar // risk_per_share)
-                required_capital = round(allowed_shares * data['close'], 0)
-                capital_ratio = round((required_capital / account_capital) * 100, 1)
-                
-                c_s1, c_s2, c_s3, c_s4 = st.columns(4)
-                c_s1.metric("💡 建議建倉股數", f"{allowed_shares:,} 股", f"約 {round(allowed_shares/1000, 1)} 張")
-                c_s2.metric("🛑 若被停損最大虧損", f"-${max_risk_dollar:,.0f} 元", f"嚴格鎖定在 {risk_pct}%")
-                c_s3.metric("💰 需動用資金", f"${required_capital:,.0f} 元")
-                c_s4.metric("📊 佔總本金比率", f"{capital_ratio}%")
-                
-                if capital_ratio > 40.0:
-                    st.warning("⚠️ 提示：該筆交易動用超過 40% 總資金，請留意單一標的過度集中風險！")
-            else:
-                st.error("⚠️ 當前現價已逼近停損點或處於過度延伸區，風險報酬不對稱，系統建議建倉 0 股！")
-                
-            st.markdown("---")
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.markdown("#### 🔍 主力買盤力道與量能")
-                st.write(f"• **當前買盤力道**：{data['buying_power']}")
-                st.write(f"• **量價結構診斷**：{data['vol_structure']}")
-                st.write(f"• **量能放大倍數**：20日均量之 **{data['vol_ratio']} 倍**")
-            with c_right:
-                st.markdown("#### 📈 均線位階與多空架構")
-                st.write(f"• 5MA：**${data['ma5']}** ｜ 10MA：**${data['ma10']}**")
-                st.write(f"• 20MA (生命線)：**${data['ma20']}** ｜ 60MA：**${data['ma60']}**")
-                if data['close'] > data['ma20']:
-                    st.success("✔ 股價站穩 20MA 生命線之上，多方結構完整。")
-                else:
-                    st.error("✖ 股價跌破 20MA 月線生命線，短中期偏空整理。")
-                    
-            st.markdown("---")
-            st.markdown(f"#### 📰 【{data['name']}】最新重大財經新聞")
-            if data['news']:
-                for n in data['news']:
-                    st.markdown(f"• [{n['title']}]({n['link']}) — <small style='color:gray'>{n['date']}</small>", unsafe_allow_html=True)
 
 # ================= 頁面 3：老王均線獨門戰法 (萬里無雲/買黑不買紅) =================
 elif menu == "👑 3. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":

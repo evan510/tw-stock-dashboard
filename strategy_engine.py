@@ -11,35 +11,174 @@ from data_engine import (
 )
 import config
 
-def evaluate_entry_status(df, last, prev):
+# ================= 1. 大盤體質評分 (Market Regime Score) =================
+@st.cache_data(ttl=600, show_spinner=False)
+def calculate_market_regime():
+    twii_df = get_stock_history('^TWII', period='4mo')
+    twoii_df = get_stock_history('^TWOII', period='4mo')
+    
+    if twii_df.empty or len(twii_df) < 15:
+        return {'score': 55, 'status': '🟡 NEUTRAL (震盪偏多)', 'color': 'orange', 'desc': '大盤處於均線整理區間，嚴格控管短線停損。', 'twii_pct20': 0.0}
+        
+    last = twii_df.iloc[-1]
+    close = float(last['Close'])
+    ma5 = float(last['5MA']) if pd.notnull(last['5MA']) else close
+    ma20 = float(last['20MA']) if pd.notnull(last['20MA']) else close
+    ma60 = float(last['60MA']) if pd.notnull(last['60MA']) else close
+    vol = float(last['Volume'])
+    vol_ma20 = float(last['Vol_MA20']) if pd.notnull(last['Vol_MA20']) else vol
+    
+    score = 0
+    if close > ma5: score += 10
+    if close > ma20: score += 15
+    if close > ma60: score += 5
+    if ma5 > ma20: score += 15
+    if ma20 > ma60: score += 10
+    if vol >= vol_ma20 * 1.0: score += 15
+    if vol >= vol_ma20 * 1.2: score += 10
+    
+    if not twoii_df.empty and len(twoii_df) >= 5:
+        otc_last = twoii_df.iloc[-1]
+        otc_close = float(otc_last['Close'])
+        otc_ma20 = float(otc_last['20MA']) if pd.notnull(otc_last['20MA']) else otc_close
+        if otc_close > otc_ma20: score += 20
+        
+    score = min(max(score, 0), 100)
+    
+    p20_close = float(twii_df['Close'].iloc[-21]) if len(twii_df) >= 21 else float(twii_df['Close'].iloc[0])
+    twii_pct20 = round(((close - p20_close) / p20_close) * 100, 2)
+    
+    if score >= 75:
+        status, color = "🟢 BULLISH (強勢多頭)", "green"
+        desc = "大盤均線多頭發散且量能充足，允許全力啟動短線突破策略。"
+    elif score >= 40:
+        status, color = "🟡 NEUTRAL (區間震盪)", "orange"
+        desc = "大盤處於均線震盪期，嚴選強於大盤領頭羊，提防假突破。"
+    else:
+        status, color = "🔴 BEARISH (空頭防守)", "red"
+        desc = "大盤評分低於 40 分風控警戒線，全系統強制啟動保護：禁止發出 BUY 訊號！"
+        
+    return {'score': score, 'status': status, 'color': color, 'desc': desc, 'twii_pct20': twii_pct20}
+
+# ================= 2. 規格書核心評估 (Breakout / Pre-Breakout / Too Extended) =================
+def evaluate_entry_status(df, last, prev, market_score=60, twii_pct20=0.0):
     close = round(float(last['Close']), 2)
     prev_close = round(float(prev['Close']), 2)
     pct_change = round(((close - prev_close) / prev_close) * 100, 2)
+    
     ma5 = float(last['5MA']) if pd.notnull(last['5MA']) else close
     ma10 = float(last['10MA']) if pd.notnull(last['10MA']) else close
     ma20 = float(last['20MA']) if pd.notnull(last['20MA']) else close
     vol = float(last['Volume'])
-    vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-    vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
+    vol_ma20 = float(last['Vol_MA20']) if pd.notnull(last['Vol_MA20']) else vol
+    vol_ratio = round(vol / (vol_ma20 + 1e-9), 2)
     rsi = float(last['RSI']) if pd.notnull(last['RSI']) else 50.0
     bias_5ma = round(((close - ma5) / ma5) * 100, 2)
-    bias_20ma = round(((close - ma20) / ma20) * 100, 2)
     stop_loss = round(min(ma20, float(df['Low'].iloc[-3:].min())), 2)
     
-    if bias_5ma > 8.0 or bias_20ma > 20.0 or rsi > 80:
-        return ("⚠️ 極度過熱 (切勿追高)", "hot", f"短線急漲過猛（5MA正乖離達 {bias_5ma}%，RSI {round(rsi,1)}），隨時有震盪拉回風險。耐心等待回測 5MA/10MA 守穩再進場！", stop_loss)
-    elif close > ma20 and vol_ratio >= 1.35 and pct_change >= 2.0:
-        return ("🟢 動能突破 (可以進場)", "buy", f"放量突破整理區（均量 {vol_ratio} 倍），均線多頭發散，可逢回測分批進場，停損守今日低點 ${round(float(last['Low']), 2)}。", stop_loss)
-    elif close > ma20 and abs(close - ma5) / ma5 <= 0.025 and vol < vol_ma5 * 1.1:
-        return ("🟢 回測有守 (買點浮現)", "buy", f"股價回測 5MA/10MA 不破，成交量良性萎縮（均量 {vol_ratio} 倍），籌碼沈澱，屬高盈虧比切入點！", stop_loss)
-    elif close > ma20:
-        return ("🟡 區間整理 (觀望等待)", "neutral", "站穩月線但動能尚未表態，處以盤代跌結構，列入觀察名單，等待帶量紅棒再介入。", stop_loss)
+    p20_close = float(df['Close'].iloc[-21]) if len(df) >= 21 else float(df['Close'].iloc[0])
+    stock_pct20 = round(((close - p20_close) / p20_close) * 100, 2)
+    rs_factor = round(stock_pct20 - twii_pct20, 2)
+    
+    prev_20d_high = round(float(df['High'].iloc[-21:-1].max()), 2) if len(df) >= 21 else float(last['High'])
+    
+    risk_unit = max(round(close - stop_loss, 2), 0.2)
+    target1 = round(close + (risk_unit * 1.0), 2)
+    target2 = round(close + (risk_unit * 2.0), 2)
+    rr1 = round((target1 - close) / risk_unit, 1)
+    rr2 = round((target2 - close) / risk_unit, 1)
+    
+    pattern = "常態整理"
+    if close >= prev_20d_high and vol_ratio >= 1.5:
+        pattern = "🚀 20日放量突破"
+    elif close > ma20 and abs(close - prev_20d_high) / (prev_20d_high + 1e-9) <= 0.025:
+        pattern = "🎯 突破前夕窄幅蓄勢"
+        
+    if market_score < 40:
+        return ("🟡 觀望等待 (大盤偏空鎖定)", "neutral", "大盤體質評分低於 40 分，風控啟動，全域禁止開倉。", stop_loss, target1, target2, rr1, rr2, rs_factor, pattern)
+    
+    if pct_change >= 7.0 or (prev_20d_high > 0 and close > prev_20d_high * 1.035) or bias_5ma > 8.5 or rsi > 80:
+        return ("⚠️ 過度延伸 (TOO EXTENDED)", "hot", f"短線急漲過度延伸（漲幅 {pct_change}%，乖離過大），嚴禁追高！耐心等待拉回守穩再進。", stop_loss, target1, target2, rr1, rr2, rs_factor, "⚠️ 短線急漲過熱")
+        
+    if pattern == "🚀 20日放量突破" and close > ma20:
+        return ("🟢 20日放量突破 (BUY)", "buy", f"放量突破 20 日高點 ${prev_20d_high}（均量 {vol_ratio} 倍），動能強烈，可於突破點附近分批進場！", stop_loss, target1, target2, rr1, rr2, rs_factor, pattern)
+        
+    if pattern == "🎯 突破前夕窄幅蓄勢" and vol < vol_ma20 * 1.1:
+        return ("🟢 蓄勢即將突破 (BUY)", "buy", f"緊貼 20 日高點 ${prev_20d_high} 壓縮量縮整理，籌碼沈澱乾淨，盈虧比極佳，伏擊買點浮現！", stop_loss, target1, target2, rr1, rr2, rs_factor, pattern)
+        
+    if close > ma20:
+        return ("🟡 區間蓄勢 (WATCH)", "neutral", "站穩月線但動能尚未表態，處以盤代跌結構，列入觀察名單。", stop_loss, target1, target2, rr1, rr2, rs_factor, pattern)
     else:
-        return ("🔴 弱勢破線 (嚴禁進場)", "bear", "跌破 20MA 生命線，動能偏弱，切忌盲目抄底，已有持股者逢反彈宜執行減碼。", stop_loss)
+        return ("🔴 破線轉弱 (AVOID)", "bear", "跌破 20MA 生命線，動能偏弱，切忌盲目抄底，手中持股宜減碼。", stop_loss, target1, target2, rr1, rr2, rs_factor, "破線偏空")
 
+# ================= 3. 老王均線獨門戰法引擎 =================
 @st.cache_data(ttl=900, show_spinner=False)
-def analyze_single_stock_metrics(sym):
-    df = get_stock_history(sym, period='3mo')
+def evaluate_oldwang_strategy(sym):
+    df = get_stock_history(sym, period='4mo')
+    if df.empty or len(df) < 20:
+        return None
+        
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    close = round(float(last['Close']), 2)
+    open_p = round(float(last['Open']), 2)
+    pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
+    
+    ma5 = round(float(last['5MA']), 2)
+    ma10 = round(float(last['10MA']), 2)
+    ma20 = round(float(last['20MA']), 2)
+    ma60 = round(float(last['60MA']), 2)
+    vol = float(last['Volume'])
+    vol_ma5 = float(last['Vol_MA5'])
+    
+    recent_20 = df.iloc[-20:]
+    max_vol_idx = recent_20['Volume'].idxmax()
+    max_vol_k_low = round(float(df.loc[max_vol_idx, 'Low']), 2)
+    max_vol_k_date = max_vol_idx.strftime('%m/%d')
+    
+    is_wan_li = (close > ma5) and (close > ma10) and (close > ma20) and (ma5 >= ma10 >= ma20)
+    is_wu_yun = (close < ma5) and (close < ma10) and (close < ma20)
+    
+    if is_wan_li:
+        cloud_status = "🟢 萬里無雲 (三陽開泰)"
+        cloud_desc = "股價同時站穩 5MA、10MA、20MA 之上且均線多頭發散，上檔萬里無雲無壓力！"
+    elif is_wu_yun:
+        cloud_status = "🔴 烏雲密布 (三聲無奈)"
+        cloud_desc = "跌破 5MA、10MA、20MA 所有均線，老王金律：下方無支撐，現金為王絕不抄底！"
+    else:
+        cloud_status = "🟡 糾結震盪 (均線整理)"
+        cloud_desc = "均線糾結互有上下，等待放量突破或回測支撐表態。"
+        
+    is_black_k = close < open_p
+    tested_support = (abs(close - ma5) / ma5 <= 0.015) or (abs(close - ma10) / ma10 <= 0.015)
+    kept_ma = (close >= ma5 * 0.99) or (close >= ma10 * 0.99)
+    vol_shrunk = vol < vol_ma5 * 1.1
+    
+    is_buy_black = is_black_k and tested_support and kept_ma and vol_shrunk and (close > ma20)
+    
+    exit_alert = "🟢 均線健全，順勢抱緊"
+    if close < ma20:
+        exit_alert = "🛑 【跌破 20MA 生命線】波段趨勢瓦解，老王金律：全數清倉，現金為王！"
+    elif close < ma10:
+        exit_alert = "🛑 【跌破 10MA 支撐】轉弱訊號，波段多單建議全數出場或嚴格防守！"
+    elif close < ma5:
+        exit_alert = "⚠️ 【跌破 5MA 短線線】強勢動能停滯，老王紀律：先賣一半減碼，落袋為安！"
+    elif close < max_vol_k_low:
+        exit_alert = f"💣 【跌破大量K低點 ${max_vol_k_low}】主力籌碼全數套牢，凶多吉少快撤退！"
+        
+    return {
+        'symbol': sym, 'close': close, 'pct_change': pct_change,
+        'ma5': ma5, 'ma10': ma10, 'ma20': ma20, 'ma60': ma60,
+        'cloud_status': cloud_status, 'cloud_desc': cloud_desc,
+        'is_wan_li': is_wan_li, 'is_buy_black': is_buy_black,
+        'exit_alert': exit_alert, 'max_vol_low': max_vol_k_low, 'max_vol_date': max_vol_k_date,
+        'vol_shrunk': vol_shrunk
+    }
+
+# ================= 4. 單檔與池分析 =================
+@st.cache_data(ttl=900, show_spinner=False)
+def analyze_single_stock_metrics(sym, market_score=60, twii_pct20=0.0):
+    df = get_stock_history(sym, period='4mo')
     if df.empty or len(df) < 10:
         return None
     last = df.iloc[-1]
@@ -47,84 +186,70 @@ def analyze_single_stock_metrics(sym):
     close = round(float(last['Close']), 2)
     pct_change = round(((close - float(prev['Close'])) / float(prev['Close'])) * 100, 2)
     vol = float(last['Volume'])
-    vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-    vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
+    vol_ma20 = float(last['Vol_MA20']) if pd.notnull(last['Vol_MA20']) else vol
+    vol_ratio = round(vol / (vol_ma20 + 1e-9), 2)
     rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
     ma5 = round(float(last['5MA']), 2) if pd.notnull(last['5MA']) else close
     bias_5ma = round(((close - ma5) / ma5) * 100, 2)
-    signal, color, advice, stop_loss = evaluate_entry_status(df, last, prev)
+    
+    signal, color, advice, stop_loss, t1, t2, rr1, rr2, rs, pattern = evaluate_entry_status(
+        df, last, prev, market_score, twii_pct20
+    )
     
     return {
-        'close': close,
-        'pct_change': pct_change,
-        'vol_ratio': vol_ratio,
-        'rsi': rsi,
-        'bias_5ma': bias_5ma,
-        'entry_signal': signal,
-        'entry_color': color,
-        'action_advice': advice,
-        'stop_loss': stop_loss
+        'close': close, 'pct_change': pct_change, 'vol_ratio': vol_ratio,
+        'rsi': rsi, 'bias_5ma': bias_5ma, 'entry_signal': signal,
+        'entry_color': color, 'action_advice': advice, 'stop_loss': stop_loss,
+        'target1': t1, 'target2': t2, 'rr1': rr1, 'rr2': rr2, 'rs_factor': rs,
+        'pattern': pattern
     }
 
 def analyze_custom_pool_stocks(pool_list):
+    regime = calculate_market_regime()
     results = []
     for item in pool_list:
         sym = item['symbol']
-        # 自動重新解析以確保名稱與 ETF 準確性
         r_sym, r_name = resolve_stock(sym)
         name = item.get('name') or r_name
         tag = item.get('tag', '自選')
         note = item.get('note', '')
         
-        metrics = analyze_single_stock_metrics(r_sym)
+        metrics = analyze_single_stock_metrics(r_sym, regime['score'], regime['twii_pct20'])
         if not metrics:
             continue
             
-        results.append({
-            'symbol': r_sym,
-            'name': name,
-            'tag': tag,
-            'note': note,
-            **metrics
-        })
+        results.append({'symbol': r_sym, 'name': name, 'tag': tag, 'note': note, **metrics})
     return results
 
 @st.cache_data(ttl=900, show_spinner=False)
 def analyze_dynamic_market_hot_stocks(limit=30):
+    regime = calculate_market_regime()
     active_pool = get_twse_market_active_stocks(limit=limit)
     results = []
     for item in active_pool:
         sym = item['symbol']
         name = item['name']
-        metrics = analyze_single_stock_metrics(sym)
+        metrics = analyze_single_stock_metrics(sym, regime['score'], regime['twii_pct20'])
         if not metrics:
             continue
         turnover_billion = round(item.get('trade_value', 0) / 100000000, 2)
-        results.append({
-            'symbol': sym,
-            'name': name,
-            'turnover_billion': turnover_billion,
-            **metrics
-        })
+        results.append({'symbol': sym, 'name': name, 'turnover_billion': turnover_billion, **metrics})
     return results
 
 @st.cache_data(ttl=900, show_spinner=False)
 def analyze_curated_theme_stocks():
+    regime = calculate_market_regime()
     results = []
     for sym, name, theme in config.CURATED_THEME_POOL:
-        metrics = analyze_single_stock_metrics(sym)
+        metrics = analyze_single_stock_metrics(sym, regime['score'], regime['twii_pct20'])
         if not metrics:
             continue
-        results.append({
-            'symbol': sym,
-            'name': name,
-            'theme': theme,
-            **metrics
-        })
+        results.append({'symbol': sym, 'name': name, 'theme': theme, **metrics})
     results.sort(key=lambda x: x['vol_ratio'], reverse=True)
     return results
 
 def run_ai_deep_analysis(query_input):
+    regime = calculate_market_regime()
     sym, resolved_name = resolve_stock(query_input)
     if not sym:
         return None, "請輸入有效的股票名稱、ETF 或代號！"
@@ -142,52 +267,36 @@ def run_ai_deep_analysis(query_input):
     ma20 = round(float(last['20MA']), 2) if pd.notnull(last['20MA']) else close
     ma60 = round(float(last['60MA']), 2) if pd.notnull(last['60MA']) else close
     vol = float(last['Volume'])
-    vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-    vol_ratio = round(vol / (vol_ma5 + 1e-9), 2)
+    vol_ma20 = float(last['Vol_MA20']) if pd.notnull(last['Vol_MA20']) else vol
+    vol_ratio = round(vol / (vol_ma20 + 1e-9), 2)
     rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
     
     if vol_ratio >= 1.5 and pct_change >= 2.0:
-        buying_power = "🔥 主力強攻掃貨（買盤動能極度充沛）"
-        vol_structure = "帶量長紅攻擊型態，主力大戶積極進駐，市場關注度高。"
+        buying_power = "🔥 主力強攻掃貨（短線動能極度充沛）"
+        vol_structure = "突破長紅攻擊型態，短線量能噴發，市場關注度頂峰。"
     elif vol_ratio >= 1.5 and pct_change <= -2.0:
-        buying_power = "⚠️ 高檔爆量長黑（賣盤沉重，主力獲利倒貨）"
-        vol_structure = "出量收黑K棒，高檔調節賣壓出籠，短線提防假突破震盪。"
+        buying_power = "⚠️ 出量長黑倒貨（獲利調節賣壓出籠）"
+        vol_structure = "爆量收黑K棒，籌碼鬆動，短線慎防假突破拉回。"
     elif vol_ratio < 0.8:
-        buying_power = "💤 縮量沈澱（買賣雙方觀望，浮額清洗中）"
-        vol_structure = "量縮洗盤整理，若能在均線處止跌，往往醞釀下一波契機。"
+        buying_power = "💤 縮量沈澱（浮額清洗整理中）"
+        vol_structure = "極度量縮整理，往往醞釀下一波變盤表態契機。"
     else:
-        buying_power = "⚖️ 買賣勢均力敵（常態換手）"
-        vol_structure = "成交量接近 5 日均量，短線維持既有技術軌道運行。"
+        buying_power = "⚖️ 換手常態（區間運行）"
+        vol_structure = "成交量接近 20 日均量，技術指標維持常態。"
         
-    if close > ma20 and ma5 > ma10 and ma10 > ma20 and vol_ratio >= 1.25 and rsi < 78:
-        ai_verdict = "🟢 強烈建議波段進場（多方動能共振）"
-        entry_zone = f"${round(close * 0.98, 1)} ~ ${close}"
-        stop_loss = round(min(ma20, low_price * 0.98), 2)
-        target = round(close * 1.12, 2)
-    elif close > ma20 and abs(close - ma5) / ma5 <= 0.03:
-        ai_verdict = "🟡 建議回測分批佈局（支撐有守）"
-        entry_zone = f"${ma5} ~ ${round(ma5 * 1.015, 1)}"
-        stop_loss = round(ma20 * 0.98, 2)
-        target = round(close * 1.10, 2)
-    elif rsi >= 78 or ((close - ma5) / ma5) > 0.08:
-        ai_verdict = "⚠️ 觀望嚴禁追高（指標過熱，防震盪拉回）"
-        entry_zone = "暫不建議市價追價，靜待回測 5MA 量縮再進場"
-        stop_loss = round(ma5 * 0.97, 2)
-        target = round(close * 1.06, 2)
-    else:
-        ai_verdict = "🔴 嚴禁介入 / 偏空防守（跌破關鍵生命線）"
-        entry_zone = "不建議進場，手上有持股者逢反彈應執行減碼"
-        stop_loss = round(close * 0.96, 2)
-        target = round(ma20, 2)
-        
-    rr = round(max(target - close, 0.1) / max(close - stop_loss, 0.1), 1)
+    signal, color, advice, stop_loss, t1, t2, rr1, rr2, rs, pattern = evaluate_entry_status(
+        df, last, prev, regime['score'], regime['twii_pct20']
+    )
     news = get_stock_news(resolved_name, max_items=4)
+    oldwang_metrics = evaluate_oldwang_strategy(sym)
+    
     return {
         'symbol': sym, 'name': resolved_name, 'close': close, 'pct_change': pct_change,
         'high': high_price, 'low': low_price, 'ma5': ma5, 'ma10': ma10, 'ma20': ma20, 'ma60': ma60,
         'vol': vol, 'vol_ratio': vol_ratio, 'rsi': rsi, 'buying_power': buying_power,
-        'vol_structure': vol_structure, 'ai_verdict': ai_verdict, 'entry_zone': entry_zone,
-        'stop_loss': stop_loss, 'target': target, 'rr': rr, 'news': news
+        'vol_structure': vol_structure, 'ai_verdict': signal, 'entry_zone': f"${round(close * 0.99, 1)} ~ ${close}",
+        'stop_loss': stop_loss, 'target1': t1, 'target2': t2, 'rr1': rr1, 'rr2': rr2, 'rs_factor': rs,
+        'pattern': pattern, 'news': news, 'market_regime': regime, 'oldwang': oldwang_metrics
     }, None
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -208,24 +317,24 @@ def analyze_and_rank_pool(limit=30):
         ma10 = round(float(last['10MA']), 2) if pd.notnull(last['10MA']) else close
         ma20 = round(float(last['20MA']), 2) if pd.notnull(last['20MA']) else close
         vol = float(last['Volume'])
-        vol_ma5 = float(last['Vol_MA5']) if pd.notnull(last['Vol_MA5']) else vol
-        rsi = round(float(last['RSI']), 1) if pd.notnull(last['RSI']) else 50.0
+        vol_ma20 = float(last['Vol_MA20']) if pd.notnull(last['Vol_MA20']) else vol
         score = 40
         signals, tags = [], []
         if trust_vol >= 1000:
-            score += 20; signals.append(f"投信大舉重倉鎖碼：買超 {trust_vol:,} 張"); tags.append("投信重倉")
+            score += 25; signals.append(f"投信大舉重倉：買超 {trust_vol:,} 張"); tags.append("投信重倉")
         elif trust_vol >= 300:
             score += 15; signals.append(f"投信積極建倉：買超 {trust_vol:,} 張"); tags.append("投信進駐")
         if close > ma20:
             score += 15; signals.append("站穩 20MA 生命線（多方確立）")
         else:
-            score -= 25; signals.append("跌破 20MA 生命線（弱勢整理）")
+            score -= 25; signals.append("跌破 20MA 生命線（偏弱整理）")
         if ma5 > ma10 and ma10 > ma20:
-            score += 15; signals.append("均線多頭排列 (5MA > 10MA > 20MA)"); tags.append("多頭排列")
-        if vol > vol_ma5 * 1.3:
-            score += 15; signals.append("出量攻擊：成交量高於 5 日均量 30%"); tags.append("放量突破")
+            score += 15; signals.append("均線多頭排列"); tags.append("多頭排列")
+        if vol > vol_ma20 * 1.3:
+            score += 15; signals.append("放量攻擊：成交量高於 20 日均量 30%"); tags.append("放量突破")
+            
         stop_loss = round(min(ma20, float(df['Low'].iloc[-3:].min())), 2)
-        target_price = round(close * 1.12, 2)
+        target_price = round(close * 1.08, 2)
         rr_ratio = round(max(target_price - close, 0.1) / max(close - stop_loss, 0.1), 1)
         rankings.append({
             'symbol': symbol, 'name': name, 'close': close, 'pct_change': pct_change,

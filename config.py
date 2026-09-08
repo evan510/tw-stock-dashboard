@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 APP_TITLE = "台股戰情室"
-APP_VERSION = "v4.1.0 RWD Elite"
+APP_VERSION = "v4.2.0 Elite"
 APP_ICON = "📈"
 
 MACRO_TICKERS = {

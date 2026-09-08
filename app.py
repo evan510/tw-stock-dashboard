@@ -14,6 +14,7 @@ from data_engine import (
 )
 get_institutional_streak_stocks = getattr(data_engine, 'get_institutional_streak_stocks', lambda limit=30: {})
 scan_theme_catalyst_news = getattr(data_engine, 'scan_theme_catalyst_news', lambda max_news=6: [])
+get_night_session_radar = getattr(data_engine, 'get_night_session_radar', lambda: {})
 
 from strategy_engine import (
     calculate_market_regime,
@@ -28,7 +29,15 @@ from strategy_engine import (
 )
 from custom_pool_manager import load_custom_pool, add_to_custom_pool, remove_from_custom_pool
 from portfolio_manager import load_portfolio, add_holding, remove_holding, evaluate_holdings
-from notifier import load_alert_settings, save_alert_settings, send_line_notify, send_webhook_alert, send_daily_market_summary
+from notifier import (
+    load_alert_settings,
+    save_alert_settings,
+    send_line_messaging_api,
+    send_line_notify,
+    send_webhook_alert,
+    send_smart_notification,
+    send_daily_market_summary
+)
 import config
 
 st.set_page_config(
@@ -253,6 +262,70 @@ st.sidebar.caption("✅ 支援手機 RWD 直式介面操作")
 if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
     st.title("🚀 短線題材與法人連買狙擊槍 (波段 5% ~ 20%)")
     st.caption("專為短線波段操作設計：鎖定【近期強勢題材催化】+【外資/投信連買鎖碼】+【回測均線不破或放量起漲點】")
+
+    # 🌙 夜盤與跨市場即時風向儀 (Night Session Radar)
+    night_radar = get_night_session_radar()
+    wtx = night_radar.get('wtx', {})
+    tsm = night_radar.get('tsm', {})
+    nq = night_radar.get('nq', {})
+    impact_pts = night_radar.get('impact_pts', 0)
+    sentiment_color = night_radar.get('sentiment_color', '#38bdf8')
+    sentiment_label = night_radar.get('gap_sentiment', '平盤整理')
+    advice_text = night_radar.get('advice', '')
+
+    wtx_chg_sign = f"{wtx.get('change', 0):+,.1f}"
+    wtx_pct_sign = f"{wtx.get('pct', 0):+,.2f}%"
+    tsm_chg_sign = f"{tsm.get('change', 0):+,.2f}"
+    tsm_pct_sign = f"{tsm.get('pct', 0):+,.2f}%"
+    nq_chg_sign = f"{nq.get('change', 0):+,.1f}"
+    nq_pct_sign = f"{nq.get('pct', 0):+,.2f}%"
+
+    wtx_color = "#ef4444" if wtx.get('change', 0) > 0 else ("#22c55e" if wtx.get('change', 0) < 0 else "#94a3b8")
+    tsm_color = "#ef4444" if tsm.get('change', 0) > 0 else ("#22c55e" if tsm.get('change', 0) < 0 else "#94a3b8")
+    nq_color = "#ef4444" if nq.get('change', 0) > 0 else ("#22c55e" if nq.get('change', 0) < 0 else "#94a3b8")
+
+    st.markdown(f"""
+    <div class="rwd-card" style="border-top: 3px solid {sentiment_color}; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.3rem;">🌙</span>
+                <span style="font-size:1.05rem; font-weight:700; color:#f1f5f9;">夜盤與跨市場即時風向儀 (Night Session Radar)</span>
+            </div>
+            <div>
+                <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1; font-size:0.8rem;">
+                    ⏰ 更新：{wtx.get('time', datetime.now().strftime('%H:%M'))} (盤中15:00~次日05:00)
+                </span>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px;">
+            <div style="background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border-left:3px solid {wtx_color};">
+                <div style="font-size:0.8rem; color:#94a3b8;">🇹🇼 台指期夜盤 (WTX&)</div>
+                <div style="font-size:1.25rem; font-weight:700; color:#f8fafc;">{wtx.get('price', '--')}</div>
+                <div style="font-size:0.88rem; font-weight:600; color:{wtx_color};">{wtx_chg_sign} ({wtx_pct_sign})</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border-left:3px solid {tsm_color};">
+                <div style="font-size:0.8rem; color:#94a3b8;">🇺🇸 台積電 ADR (TSM)</div>
+                <div style="font-size:1.25rem; font-weight:700; color:#f8fafc;">${tsm.get('price', 0):,.2f}</div>
+                <div style="font-size:0.88rem; font-weight:600; color:{tsm_color};">{tsm_chg_sign} ({tsm_pct_sign})</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border-left:3px solid {nq_color};">
+                <div style="font-size:0.8rem; color:#94a3b8;">🇺🇸 那斯達克期貨 (NQ=F)</div>
+                <div style="font-size:1.25rem; font-weight:700; color:#f8fafc;">{nq.get('price', 0):,.1f}</div>
+                <div style="font-size:0.88rem; font-weight:600; color:{nq_color};">{nq_chg_sign} ({nq_pct_sign})</div>
+            </div>
+        </div>
+        <div style="background:rgba(0,0,0,0.25); padding:10px 14px; border-radius:8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+            <div>
+                <span style="font-size:0.88rem; color:#94a3b8;">🚀 <b>次日台股早盤跳空試算</b>：</span>
+                <span style="font-size:0.95rem; font-weight:700; color:{sentiment_color};">{sentiment_label}</span>
+                <span style="font-size:0.85rem; color:#e2e8f0; margin-left:6px;">(估算衝擊約 <b>{impact_pts:+,.0f} 點</b>)</span>
+            </div>
+            <div style="font-size:0.85rem; color:#cbd5e1; width:100%; margin-top:4px;">
+                💡 <b>實戰導航</b>：{advice_text}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # 可折疊點擊的 SOP 實戰操盤時間守則卡片
     with st.expander("💡 【實戰必讀】本頁短線狙擊最佳使用時機與操盤 SOP（點擊展開/收合）", expanded=False):
@@ -1026,11 +1099,29 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
     st.title("💼 我的持股庫存管家與即時風險警報")
     
     # 警報通知推播設定區塊
-    with st.expander("🔔 Line Notify / Webhook 警報通知設定", expanded=False):
+    with st.expander("🔔 LINE 官方帳號 Bot / Webhook 警報通知設定（含圖文教學）", expanded=False):
         alert_cfg = load_alert_settings()
+        
+        st.markdown("""
+        > 💡 **LINE 官方已公告 Line Notify 終止服務**。本系統已全面升級支援 **LINE Messaging API (官方帳號機器人)**！
+        > 每月提供個人 **200 則免費推播額度**，訊息依舊直達您的手機 LINE 聊天室！
+        """)
+
+        with st.expander("📖 點擊查看【LINE Developers 4 步設定教學】", expanded=False):
+            st.markdown("""
+            1. **登入後台**：前往 [LINE Developers Console](https://developers.line.biz/console/)，使用個人 LINE 帳號登入。
+            2. **建立 Provider & Channel**：建立一個 Provider (如 `MyStock`)，點選 **Create a new channel** 選擇 **「Messaging API」**。
+            3. **掃描加機器人為好友**：在 Channel 的 **「Messaging API」** 標籤頁掃描中間的 **QR code** 加機器人好友。
+            4. **取得金鑰並填入**：
+               - 在 **「Basic settings」** 標籤頁往下滑找到 **Your user ID** (格式為 `U` 開頭 33 碼字串)，複製貼入下方【LINE User ID】。
+               - 在 **「Messaging API」** 標籤頁往下滑到底部找到 **Channel access token**，點擊 **Issue** 發行，複製貼入下方【Channel Access Token】。
+            """)
+
         n_c1, n_c2 = st.columns(2)
-        line_token = n_c1.text_input("Line Notify 權杖 (Token)：", value=alert_cfg.get("line_token", ""), type="password", help="前往 https://notify-bot.line.me/ 申請權杖並加入群組")
-        webhook_url = n_c2.text_input("Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
+        line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password", help="LINE Developers > Messaging API 頁籤最下方的 Channel access token")
+        line_user_id = n_c2.text_input("LINE User ID (您的帳號識別碼)：", value=alert_cfg.get("line_user_id", ""), type="password", help="LINE Developers > Basic settings 頁籤下方的 Your user ID (U開頭)")
+        
+        webhook_url = st.text_input("備用 Webhook URL (選填，如 Discord / Slack / Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
         
         n_chk1, n_chk2 = st.columns(2)
         daily_digest = n_chk1.checkbox("每日盤後自動推播 Top 5 狙擊焦點懶人包", value=alert_cfg.get("daily_digest", True))
@@ -1038,24 +1129,37 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
 
         btn_save_alert, btn_test_line, btn_daily_digest = st.columns(3)
         if btn_save_alert.button("💾 儲存通知設定", use_container_width=True):
-            alert_cfg["line_token"] = line_token.strip()
+            alert_cfg["line_channel_token"] = line_channel_token.strip()
+            alert_cfg["line_user_id"] = line_user_id.strip()
             alert_cfg["webhook_url"] = webhook_url.strip()
             alert_cfg["daily_digest"] = daily_digest
             alert_cfg["enable_stop_loss_alert"] = enable_stop
             save_alert_settings(alert_cfg)
-            st.success("通知設定已儲存！")
+            st.success("通知設定已成功儲存！")
+
         if btn_test_line.button("📲 發送測試連線訊息", use_container_width=True):
-            ok, msg = send_line_notify("【台股戰情室 v4.4.0 Elite】Line Notify 測試訊息：系統連線正常！", token=line_token.strip())
+            ok, msg = send_line_messaging_api(
+                "【台股戰情室 v4.4.1】LINE 官方帳號機器人推播連線測試成功！✅\n系統已隨時準備為您推播每日焦點與風險警報。",
+                channel_access_token=line_channel_token.strip(),
+                user_id=line_user_id.strip()
+            )
             if ok:
                 st.success(msg)
             else:
-                st.error(msg)
+                # 提示使用者 fallback 或詳細錯誤
+                st.error(f"發送失敗：{msg}")
+
         if btn_daily_digest.button("🚀 立即推送今日盤後焦點快報", use_container_width=True):
             picks_for_line = get_short_term_catalyst_picks(limit=5)
             regime_for_line = calculate_market_regime()
-            ok, msg = send_daily_market_summary(picks_for_line, regime_for_line, token=line_token.strip())
+            ok, msg = send_daily_market_summary(
+                picks_for_line,
+                regime_for_line,
+                channel_token=line_channel_token.strip(),
+                user_id=line_user_id.strip()
+            )
             if ok:
-                st.success("今日盤後 Top 5 焦點快報已順利發送到您的手機 Line！")
+                st.success("今日盤後 Top 5 焦點快報已順利發送到您的手機 LINE！")
             else:
                 st.error(msg)
                 
@@ -1086,15 +1190,15 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
         alerts = [item for item in evaluated if item.get('is_alert')]
         if alerts:
             st.warning(f"⚠️ 注意！目前有 {len(alerts)} 檔持股觸發風險警報（跌破月線或虧損超過 5%）")
-            if st.button("🚨 一鍵推播庫存警報至 Line", type="primary", use_container_width=True):
+            if st.button("🚨 一鍵推播庫存警報至 LINE", type="primary", use_container_width=True):
                 msg_lines = ["【台股戰情室 風險警報通知】"]
                 for a in alerts:
                     msg_lines.append(f"• {a['name']} ({a['symbol']}): 現價 ${a['current_price']} 損益 {a['profit_pct']}% -> {a['alert_reason']}")
                 msg_lines.append(f"總投入成本: ${summary['total_cost']:,.0f} | 市值: ${summary['total_market_value']:,.0f}")
                 full_msg = "\n".join(msg_lines)
-                ok, msg = send_line_notify(full_msg)
+                ok, msg = send_smart_notification(full_msg, title="【台股戰情室 風險警報通知】")
                 if ok:
-                    st.success("已成功將警報發送至 Line！")
+                    st.success("已成功將警報發送至 LINE！")
                 else:
                     st.error(f"發送失敗：{msg}")
                     

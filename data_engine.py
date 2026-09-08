@@ -501,3 +501,106 @@ def scan_theme_catalyst_news(theme_category="全部題材", max_news=10):
             
     return unique_news[:max_news]
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_night_session_radar():
+    """
+    夜盤與跨市場即時風向儀 (Night Session Radar)
+    監控：
+    1. 台指期夜盤 (WTX&) 即時點數與漲跌幅
+    2. 美股台積電 ADR (TSM)
+    3. 美股那斯達克 100 期貨 (NQ=F)
+    4. 估算對次日台股加權指數開盤的跳空影響與多空情境
+    """
+    import re
+    radar = {
+        'wtx': {'price': '--', 'change': 0.0, 'pct': 0.0, 'time': ''},
+        'tsm': {'price': 0.0, 'change': 0.0, 'pct': 0.0},
+        'nq': {'price': 0.0, 'change': 0.0, 'pct': 0.0},
+        'impact_pts': 0.0,
+        'gap_sentiment': '平盤震盪',
+        'sentiment_color': '#94a3b8',
+        'advice': '夜盤波動平緩，明日早盤預期平盤開出，觀察開盤前 15 分鐘量能發動情況。'
+    }
+
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+    # 1. 台指期夜盤即時報價 (Yahoo 股市期貨 WTX&)
+    try:
+        url = 'https://tw.stock.yahoo.com/future/WTX%26'
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            text = soup.get_text()
+            m = re.search(r'WTX&.*?([0-9,]+\.[0-9]{2})([+-]?[0-9,]+\.[0-9]{2})\(([+-]?[0-9.]+)%\)', text)
+            if m:
+                p_str = m.group(1).replace(',', '')
+                c_str = m.group(2).replace(',', '')
+                pct_str = m.group(3).replace('%', '')
+                radar['wtx']['price'] = p_str
+                radar['wtx']['change'] = float(c_str)
+                radar['wtx']['pct'] = float(pct_str)
+            # 時間
+            t_m = re.search(r'([0-9]{2}:[0-9]{2})\s*更新', text)
+            if t_m:
+                radar['wtx']['time'] = t_m.group(1)
+    except Exception:
+        pass
+
+    # 2. 國際盤連動 (TSM, NQ=F)
+    try:
+        tickers = yf.Tickers('TSM NQ=F')
+        # TSM
+        if 'TSM' in tickers.tickers:
+            tsm_fi = tickers.tickers['TSM'].fast_info
+            tsm_p = tsm_fi.last_price
+            tsm_prev = tsm_fi.previous_close
+            if tsm_p and tsm_prev:
+                radar['tsm']['price'] = round(tsm_p, 2)
+                radar['tsm']['change'] = round(tsm_p - tsm_prev, 2)
+                radar['tsm']['pct'] = round((tsm_p - tsm_prev) / tsm_prev * 100, 2)
+        # NQ
+        if 'NQ=F' in tickers.tickers:
+            nq_fi = tickers.tickers['NQ=F'].fast_info
+            nq_p = nq_fi.last_price
+            nq_prev = nq_fi.previous_close
+            if nq_p and nq_prev:
+                radar['nq']['price'] = round(nq_p, 1)
+                radar['nq']['change'] = round(nq_p - nq_prev, 1)
+                radar['nq']['pct'] = round((nq_p - nq_prev) / nq_prev * 100, 2)
+    except Exception:
+        pass
+
+    # 3. 試算隔日大盤跳空衝擊與情境
+    # 台指夜盤每漲跌 1 點即連動大盤約 1 點；TSM ADR 漲跌 1% 帶動台積電約 1% (影響台股約 80 點)
+    wtx_chg = radar['wtx']['change']
+    tsm_pct = radar['tsm']['pct']
+    nq_pct = radar['nq']['pct']
+
+    # 綜合衝擊試算點數
+    impact = wtx_chg * 0.75 + (tsm_pct * 40)
+    radar['impact_pts'] = round(impact, 0)
+
+    if impact >= 150:
+        radar['gap_sentiment'] = '🔥 強勢大幅跳空開高 (預估 +150點以上)'
+        radar['sentiment_color'] = '#ef4444' # 紅漲
+        radar['advice'] = '受美股與夜盤大漲激勵，預期早盤跳空開高。強勢題材股切忌「開盤市價盲目追高」，應靜待 09:15 前後拉回回測均線有撐再介入。'
+    elif impact >= 50:
+        radar['gap_sentiment'] = '🟢 溫和震盪開高 (預估 +50 ~ +150點)'
+        radar['sentiment_color'] = '#f87171'
+        radar['advice'] = '夜盤偏多帶動，有助電子強勢族群與題材股順勢表態，可鎖定「模組 D 預估爆量起漲股」第一時間切入。'
+    elif impact <= -150:
+        radar['gap_sentiment'] = '❄️ 偏空大幅跳空開低 (預估 -150點以上)'
+        radar['sentiment_color'] = '#22c55e' # 綠跌
+        radar['advice'] = '跨市場重挫避險，早盤開低切忌急著摸底，應觀察大盤是否出現「開低走高爆量長下影線」再行出手；庫存嚴控停損。'
+    elif impact <= -50:
+        radar['gap_sentiment'] = '🌧️ 偏弱拉回震盪 (預估 -50 ~ -150點)'
+        radar['sentiment_color'] = '#4ade80'
+        radar['advice'] = '外圍市場回檔修正，持股防守點位提高，若跌破 5MA / 20MA 需依操盤紀律先出一半保本。'
+    else:
+        radar['gap_sentiment'] = '⚖️ 平盤中性整理 (-50 ~ +50點)'
+        radar['sentiment_color'] = '#38bdf8'
+        radar['advice'] = '夜盤多空拉鋸，明日早盤個股表現為主，強者恆強，專注在法人主力連續加碼的純度股。'
+
+    return radar
+
+

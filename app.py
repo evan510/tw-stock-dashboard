@@ -22,6 +22,7 @@ from strategy_engine import (
 )
 from custom_pool_manager import load_custom_pool, add_to_custom_pool, remove_from_custom_pool
 from portfolio_manager import load_portfolio, add_holding, remove_holding, evaluate_holdings
+from notifier import load_alert_settings, save_alert_settings, send_line_notify, send_webhook_alert
 import config
 
 st.set_page_config(
@@ -30,6 +31,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# 判斷台股盤中/盤後時段
+now = datetime.now()
+is_tw_trading = (now.weekday() < 5) and (
+    (now.hour == 9) or (now.hour > 9 and now.hour < 13) or (now.hour == 13 and now.minute <= 35)
+)
+market_time_tag = "🔴 盤中交易 (延遲15分)" if is_tw_trading else "🟢 盤後結算 (日K統計完備)"
 
 # ----------------- 頂級 RWD 深色專業操盤 CSS -----------------
 st.markdown("""
@@ -157,18 +165,19 @@ menu = st.sidebar.radio(
         "🎯 4. 投信鎖碼波段選股榜",
         "🌐 5. 盤後宏觀與法人籌碼",
         "📈 6. 互動 K 線與指標圖室",
-        "💼 7. 庫存管家與防守警報",
+        "💼 7. 庫存管家與防守警報 (含Line通知)",
         "📖 8. 短線與波段操盤心法"
     ],
     label_visibility="collapsed"
 )
 
 st.sidebar.markdown("---")
+st.sidebar.caption(f"時段狀態：{market_time_tag}")
 if st.sidebar.button("🔄 同步刷新數據", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 
-st.sidebar.caption(f"盤後更新：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.sidebar.caption(f"系統時間：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.sidebar.caption("✅ 支援手機 RWD 直式介面操作")
 
 # ================= 頁面 1：熱門焦點與短線突破 (含大盤評分與RS) =================
@@ -590,9 +599,31 @@ elif menu == "📈 6. 互動 K 線與指標圖室":
         else:
             st.error(f"查無 {real_name} ({real_sym}) 之歷史量價數據。")
 
-# ================= 頁面 7：庫存管家與防守警報 =================
-elif menu == "💼 7. 庫存管家與防守警報":
+# ================= 頁面 7：庫存管家與防守警報 (含Line通知) =================
+elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
     st.title("💼 我的持股庫存管家與即時風險警報")
+    
+    # 警報通知推播設定區塊
+    with st.expander("🔔 Line Notify / Webhook 警報通知設定", expanded=False):
+        alert_cfg = load_alert_settings()
+        n_c1, n_c2 = st.columns(2)
+        line_token = n_c1.text_input("Line Notify 權杖 (Token)：", value=alert_cfg.get("line_token", ""), type="password", help="前往 https://notify-bot.line.me/ 申請權杖並加入群組")
+        webhook_url = n_c2.text_input("Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
+        
+        btn_save_alert, btn_test_line = st.columns(2)
+        if btn_save_alert.button("💾 儲存通知設定", use_container_width=True):
+            alert_cfg["line_token"] = line_token.strip()
+            alert_cfg["webhook_url"] = webhook_url.strip()
+            save_alert_settings(alert_cfg)
+            st.success("通知設定已儲存！")
+        if btn_test_line.button("📲 發送測試訊息到 Line", use_container_width=True):
+            ok, msg = send_line_notify("【台股戰情室 v4.3】Line Notify 測試訊息：系統連線正常！", token=line_token.strip())
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+                
+    st.markdown("---")
     with st.expander("➕ 新增持股 / ETF 記錄", expanded=False):
         c1, c2, c3, c4 = st.columns(4)
         n_sym = c1.text_input("代號或名稱 (如 00878, 6467, 泰合)")
@@ -614,6 +645,23 @@ elif menu == "💼 7. 庫存管家與防守警報":
         s2.metric("當前總市值", f"${summary['total_market_value']:,.0f}")
         s3.metric("未實現總損益", f"${summary['total_profit']:,.0f}", delta=f"{summary['total_profit_pct']}%")
         s4.metric("目前持股檔數", f"{len(evaluated)} 檔")
+        
+        # 警報彙整與一鍵推播
+        alerts = [item for item in evaluated if item.get('is_alert')]
+        if alerts:
+            st.warning(f"⚠️ 注意！目前有 {len(alerts)} 檔持股觸發風險警報（跌破月線或虧損超過 5%）")
+            if st.button("🚨 一鍵推播庫存警報至 Line", type="primary", use_container_width=True):
+                msg_lines = ["【台股戰情室 風險警報通知】"]
+                for a in alerts:
+                    msg_lines.append(f"• {a['name']} ({a['symbol']}): 現價 ${a['current_price']} 損益 {a['profit_pct']}% -> {a['alert_reason']}")
+                msg_lines.append(f"總投入成本: ${summary['total_cost']:,.0f} | 市值: ${summary['total_market_value']:,.0f}")
+                full_msg = "\n".join(msg_lines)
+                ok, msg = send_line_notify(full_msg)
+                if ok:
+                    st.success("已成功將警報發送至 Line！")
+                else:
+                    st.error(f"發送失敗：{msg}")
+                    
         st.markdown("---")
         for item in evaluated:
             ch, cb = st.columns([5, 1])

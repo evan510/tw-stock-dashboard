@@ -115,7 +115,7 @@ def get_stock_history(symbol, period='4mo'):
         df['Vol_MA20'] = df['Volume'].rolling(20, min_periods=1).mean()
         
         # 布林通道 (20MA +- 2標準差)
-        std20 = df['Close'].rolling(20, min_periods=1).std().fillna(0)
+        std20 = df['Close'].rolling(20, min_periods=2).std().fillna(0)
         df['BB_Upper'] = df['20MA'] + (std20 * 2)
         df['BB_Lower'] = df['20MA'] - (std20 * 2)
         
@@ -132,7 +132,7 @@ def get_stock_history(symbol, period='4mo'):
 @st.cache_data(ttl=900, show_spinner=False)
 def get_twse_market_active_stocks(limit=30):
     active_stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     urls = [
         "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
         "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json"
@@ -140,6 +140,8 @@ def get_twse_market_active_stocks(limit=30):
     for url in urls:
         try:
             res = requests.get(url, headers=headers, timeout=6)
+            if res.status_code != 200:
+                continue
             data = res.json()
             rows = []
             if isinstance(data, list):

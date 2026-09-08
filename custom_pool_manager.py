@@ -2,7 +2,8 @@
 import json
 import os
 
-CUSTOM_POOL_FILE = "custom_pool.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CUSTOM_POOL_FILE = os.path.join(BASE_DIR, "custom_pool.json")
 
 def load_custom_pool():
     if not os.path.exists(CUSTOM_POOL_FILE):

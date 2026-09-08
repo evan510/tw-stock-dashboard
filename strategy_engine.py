@@ -131,10 +131,18 @@ def evaluate_oldwang_strategy(sym):
     vol = float(last['Volume'])
     vol_ma5 = float(last['Vol_MA5'])
     
-    recent_20 = df.iloc[-20:]
-    max_vol_idx = recent_20['Volume'].idxmax()
-    max_vol_k_low = round(float(df.loc[max_vol_idx, 'Low']), 2)
-    max_vol_k_date = max_vol_idx.strftime('%m/%d')
+    recent_len = min(20, len(df))
+    recent_20 = df.iloc[-recent_len:]
+    if not recent_20.empty and 'Volume' in recent_20 and recent_20['Volume'].max() > 0:
+        max_vol_idx = recent_20['Volume'].idxmax()
+        max_vol_k_low = round(float(df.loc[max_vol_idx, 'Low']), 2)
+        try:
+            max_vol_k_date = max_vol_idx.strftime('%m/%d')
+        except Exception:
+            max_vol_k_date = str(max_vol_idx)
+    else:
+        max_vol_k_low = round(float(last['Low']), 2)
+        max_vol_k_date = "近期"
     
     is_wan_li = (close > ma5) and (close > ma10) and (close > ma20) and (ma5 >= ma10 >= ma20)
     is_wu_yun = (close < ma5) and (close < ma10) and (close < ma20)

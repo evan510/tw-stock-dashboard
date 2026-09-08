@@ -4,7 +4,8 @@ import os
 import pandas as pd
 from data_engine import get_stock_history, resolve_stock
 
-PORTFOLIO_FILE = "user_portfolio.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PORTFOLIO_FILE = os.path.join(BASE_DIR, "user_portfolio.json")
 
 def load_portfolio():
     if not os.path.exists(PORTFOLIO_FILE):
@@ -66,12 +67,18 @@ def evaluate_holdings(holdings):
         
         status_light = "🟢 正常續抱"
         advice = "均線健全，未破防守線，順勢抱緊。"
+        is_alert = False
+        alert_reason = ""
         if current_price < ma20:
             status_light = "🔴 跌破生命線"
             advice = "收盤跌破 20MA 月線，波段轉弱，建議停損或獲利了結！"
+            is_alert = True
+            alert_reason = f"跌破 20MA 月線 (${ma20})"
         elif current_price < cost * 0.95:
             status_light = "🔴 觸發停損線"
             advice = f"虧損超過 5% (現價 ${current_price})，原始假設失效，請停損！"
+            is_alert = True
+            alert_reason = f"虧損超過 5% (成本 ${cost}, 現價 ${current_price})"
         elif profit_pct >= 15.0:
             status_light = "🟢 獲利奔跑"
             advice = "獲利超過 15%，可將停損調高至成本價，讓利潤奔跑！"
@@ -80,7 +87,8 @@ def evaluate_holdings(holdings):
             'index': idx, 'symbol': r_sym, 'name': name, 'cost': cost,
             'shares': shares, 'current_price': current_price, 'profit': round(profit, 0),
             'profit_pct': profit_pct, 'market_val': round(market_val, 0), 'ma20': round(ma20, 2),
-            'status_light': status_light, 'advice': advice
+            'status_light': status_light, 'advice': advice,
+            'is_alert': is_alert, 'alert_reason': alert_reason
         })
     total_profit = total_market_value - total_cost
     total_profit_pct = round((total_profit / total_cost) * 100, 2) if total_cost > 0 else 0.0

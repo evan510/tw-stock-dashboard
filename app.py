@@ -36,7 +36,10 @@ from notifier import (
     send_line_notify,
     send_webhook_alert,
     send_smart_notification,
-    send_daily_market_summary
+    send_daily_market_summary,
+    send_morning_market_digest,
+    send_intraday_surge_digest,
+    ensure_scheduler_running
 )
 import config
 
@@ -1123,33 +1126,52 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
         
         webhook_url = st.text_input("備用 Webhook URL (選填，如 Discord / Slack / Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
         
-        n_chk1, n_chk2 = st.columns(2)
-        daily_digest = n_chk1.checkbox("每日盤後自動推播 Top 5 狙擊焦點懶人包", value=alert_cfg.get("daily_digest", True))
-        enable_stop = n_chk2.checkbox("跌破停損價與 20MA 自動警報", value=alert_cfg.get("enable_stop_loss_alert", True))
+        st.markdown("#### ⏰ 營業日定時自動推播排程開關（可依需求自由勾選）")
+        sch_c1, sch_c2, sch_c3 = st.columns(3)
+        enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", True), help="夜盤行情總結 + 美股台積電ADR + 那指期貨 + 今日早盤跳空預估")
+        enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True), help="早盤預估爆量起漲 Top 3 飆股")
+        enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True), help="證交所法人連買 + 題材鎖碼 Top 5 懶人包")
 
-        btn_save_alert, btn_test_line, btn_daily_digest = st.columns(3)
+        enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
+
+        btn_save_alert, btn_test_line = st.columns(2)
         if btn_save_alert.button("💾 儲存通知設定", use_container_width=True):
             alert_cfg["line_channel_token"] = line_channel_token.strip()
             alert_cfg["line_user_id"] = line_user_id.strip()
             alert_cfg["webhook_url"] = webhook_url.strip()
-            alert_cfg["daily_digest"] = daily_digest
+            alert_cfg["enable_schedule_0830"] = enable_0830
+            alert_cfg["enable_schedule_0930"] = enable_0930
+            alert_cfg["enable_schedule_1530"] = enable_1530
             alert_cfg["enable_stop_loss_alert"] = enable_stop
             save_alert_settings(alert_cfg)
-            st.success("通知設定已成功儲存！")
+            st.success("通知設定與排程設定已成功儲存！")
 
         if btn_test_line.button("📲 發送測試連線訊息", use_container_width=True):
             ok, msg = send_line_messaging_api(
-                "【台股戰情室 v4.4.1】LINE 官方帳號機器人推播連線測試成功！✅\n系統已隨時準備為您推播每日焦點與風險警報。",
+                "【台股戰情室 v4.4.2】LINE 官方帳號機器人推播連線測試成功！✅\n系統背景排程已就緒：\n• 08:30 晨間快報\n• 09:30 早盤雷達\n• 15:30 盤後精選",
                 channel_access_token=line_channel_token.strip(),
                 user_id=line_user_id.strip()
             )
             if ok:
                 st.success(msg)
             else:
-                # 提示使用者 fallback 或詳細錯誤
                 st.error(f"發送失敗：{msg}")
 
-        if btn_daily_digest.button("🚀 立即推送今日盤後焦點快報", use_container_width=True):
+        st.markdown("##### 🧪 立即手動測試 3 大快報推播效果")
+        t_c1, t_c2, t_c3 = st.columns(3)
+        if t_c1.button("☀️ 測試推播 08:30 晨間快報", use_container_width=True):
+            radar = get_night_session_radar()
+            ok, msg = send_morning_market_digest(radar, channel_token=line_channel_token.strip(), user_id=line_user_id.strip())
+            if ok: st.success("已發送 08:30 晨間快報至手機！")
+            else: st.error(msg)
+            
+        if t_c2.button("⚡ 測試推播 09:30 早盤起漲", use_container_width=True):
+            surge_picks = get_intraday_volume_surge_radar(limit=5)
+            ok, msg = send_intraday_surge_digest(surge_picks, channel_token=line_channel_token.strip(), user_id=line_user_id.strip())
+            if ok: st.success("已發送 09:30 早盤起漲雷達至手機！")
+            else: st.error(msg)
+
+        if t_c3.button("🚀 測試推播 15:30 盤後精選", use_container_width=True):
             picks_for_line = get_short_term_catalyst_picks(limit=5)
             regime_for_line = calculate_market_regime()
             ok, msg = send_daily_market_summary(
@@ -1158,10 +1180,8 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
                 channel_token=line_channel_token.strip(),
                 user_id=line_user_id.strip()
             )
-            if ok:
-                st.success("今日盤後 Top 5 焦點快報已順利發送到您的手機 LINE！")
-            else:
-                st.error(msg)
+            if ok: st.success("已發送 15:30 盤後精選快報至手機！")
+            else: st.error(msg)
                 
     st.markdown("---")
     with st.expander("➕ 新增持股 / ETF 記錄", expanded=False):
@@ -1263,6 +1283,12 @@ def _background_preload_task():
         analyze_curated_theme_stocks()
     except Exception:
         pass
+
+# 啟動自動排程推播守護線程 (08:30 / 09:30 / 15:30)
+try:
+    ensure_scheduler_running()
+except Exception:
+    pass
 
 # 每個 Session 僅在背景啟動一次預熱線程，不佔用前端渲染時間
 if "has_preloaded_cache" not in st.session_state:

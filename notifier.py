@@ -2,6 +2,7 @@
 import requests
 import json
 import os
+import threading
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alert_settings.json")
 
@@ -12,6 +13,9 @@ def load_alert_settings():
         "line_token": "",  # legacy
         "webhook_url": "",
         "daily_digest": True,
+        "enable_schedule_0830": True,
+        "enable_schedule_0930": True,
+        "enable_schedule_1530": True,
         "enable_stop_loss_alert": True,
         "enable_ma20_break_alert": True
     }
@@ -129,18 +133,86 @@ def send_smart_notification(message, title="【台股戰情室】"):
     else:
         return False, "尚未設定任何推播管道 (請至第 7 頁設定 LINE Messaging API 或 Webhook)"
 
+def send_morning_market_digest(radar=None, channel_token=None, user_id=None):
+    """
+    【08:30 晨間早盤快報】
+    推播夜盤總結 + 美股台積電ADR + 那指期貨 + 今日早盤預期跳空
+    """
+    from datetime import datetime
+    import data_engine
+    if not radar:
+        radar = getattr(data_engine, 'get_night_session_radar', lambda: {})()
+
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    wtx = radar.get('wtx', {})
+    tsm = radar.get('tsm', {})
+    nq = radar.get('nq', {})
+    impact_pts = radar.get('impact_pts', 0)
+    sentiment = radar.get('gap_sentiment', '平盤震盪')
+    advice = radar.get('advice', '')
+
+    msg = f"【☀️ 台股戰情室 08:30 晨間早盤快報】\n📅 日期：{today_str}\n"
+    msg += f"━━━━━━━━━━━━━━━━\n"
+    msg += f"🌙 夜盤與美股跨市場總結：\n"
+    msg += f"• 🇹🇼 台指期夜盤：{wtx.get('price', '--')} ({wtx.get('change', 0):+,.1f} 點 / {wtx.get('pct', 0):+,.2f}%)\n"
+    msg += f"• 🇺🇸 台積電 ADR：${tsm.get('price', 0):,.2f} ({tsm.get('change', 0):+,.2f} / {tsm.get('pct', 0):+,.2f}%)\n"
+    msg += f"• 🇺🇸 那斯達克期：{nq.get('price', 0):,.1f} ({nq.get('change', 0):+,.1f} / {nq.get('pct', 0):+,.2f}%)\n\n"
+    msg += f"🎯 今日開盤跳空預估：\n"
+    msg += f"👉 預估情境：{sentiment}\n"
+    msg += f"👉 指數衝擊：約 {impact_pts:+,.0f} 點\n\n"
+    msg += f"💡 開盤操盤導航：\n{advice}\n"
+    msg += f"━━━━━━━━━━━━━━━━\n"
+    msg += f"🔔 盤中早盤起漲雷達將於 09:30 為您更新！"
+
+    if channel_token and user_id:
+        return send_line_messaging_api(msg, channel_access_token=channel_token, user_id=user_id)
+    return send_smart_notification(msg, title="台股戰情室 晨間早盤快報")
+
+def send_intraday_surge_digest(surge_picks=None, channel_token=None, user_id=None):
+    """
+    【09:30 早盤起漲雷達快報】
+    推播早盤預估爆量起漲 Top 3 飆股
+    """
+    from datetime import datetime
+    import strategy_engine
+    if surge_picks is None:
+        surge_picks = getattr(strategy_engine, 'get_intraday_volume_surge_radar', lambda limit=10: [])(limit=5)
+
+    today_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    top3 = surge_picks[:3] if surge_picks else []
+
+    msg = f"【⚡ 台股戰情室 09:30 早盤起漲雷達】\n⏰ 時間：{today_str}\n"
+    msg += f"━━━━━━━━━━━━━━━━\n"
+    if top3:
+        msg += f"🔥 盤中爆量剛起漲 Top 3 突擊標的：\n\n"
+        for idx, item in enumerate(top3, 1):
+            msg += f"{idx}. {item['name']} ({item['symbol']}) 現價 ${item['close']} ({item['pct_change']:+}%)\n"
+            msg += f"   • 預估量倍數：{item['proj_ratio']}x 20MA (預估全日 {item['proj_vol']:,} 張)\n"
+            msg += f"   • 訊號特徵：{item['signal_tag']}\n"
+            msg += f"   • 進場參考：${item['buy_zone']} | 停損：${item['stop_loss']}\n"
+    else:
+        msg += f"ℹ️ 目前早盤無顯著爆量起漲標的，市場以冷靜防守或震盪為主。\n"
+        
+    msg += f"━━━━━━━━━━━━━━━━\n"
+    msg += f"💡 操盤提醒：起漲標的嚴禁開盤市價盲目追高，等待拉回均線守穩再分批介入！"
+
+    if channel_token and user_id:
+        return send_line_messaging_api(msg, channel_access_token=channel_token, user_id=user_id)
+    return send_smart_notification(msg, title="台股戰情室 早盤起漲雷達")
+
 def send_daily_market_summary(picks_top5, regime, channel_token=None, user_id=None):
     """
+    【15:30 盤後精選快報】
     發送每日盤後 Top 5 狙擊焦點懶人包推播
     """
     from datetime import datetime
     today_str = datetime.now().strftime('%Y-%m-%d')
     
-    msg = f"【🚀 台股戰情室 盤後精選快報】\n📅 日期：{today_str}\n"
+    msg = f"【🚀 台股戰情室 15:30 盤後精選快報】\n📅 日期：{today_str}\n"
     msg += f"━━━━━━━━━━━━━━━━\n"
-    msg += f"🎯 大盤體質：{regime.get('status', '多空拉鋸')} ({regime.get('score', 60)}分)\n"
-    msg += f"👉 盤勢：{regime.get('desc', '')[:40]}...\n\n"
-    msg += f"🔥 今日 Top 5 短線法人狙擊榜：\n"
+    msg += f"🎯 今日大盤體質：{regime.get('status', '多空拉鋸')} ({regime.get('score', 60)}分)\n"
+    msg += f"👉 盤勢速覽：{regime.get('desc', '')[:45]}...\n\n"
+    msg += f"🔥 今日 Top 5 法人連續加碼狙擊榜：\n"
     
     for idx, item in enumerate(picks_top5[:5], 1):
         streak_text = f"連買{item.get('streak_days', 1)}天" if item.get('streak_days', 0) > 1 else "爆量敲進"
@@ -149,9 +221,86 @@ def send_daily_market_summary(picks_top5, regime, channel_token=None, user_id=No
         msg += f"   • 停損：${item['stop_loss']} | 目標：${item['target1']}\n"
         
     msg += f"━━━━━━━━━━━━━━━━\n"
-    msg += f"💡 操盤紀律：嚴格執行停損，不盲目追高！"
+    msg += f"💡 操盤紀律：嚴格執行停損，保護獲利與本金！"
     
     if channel_token and user_id:
         return send_line_messaging_api(msg, channel_access_token=channel_token, user_id=user_id)
     return send_smart_notification(msg, title="台股戰情室 盤後精選快報")
+
+# ================= 自動排程推播守護引擎 (Background Scheduler Daemon) =================
+_scheduler_started = False
+_scheduler_lock = threading.Lock()
+
+def _run_scheduler_loop():
+    """
+    背景常駐循環：
+    在營業日 (週一至週五) 定時檢查並觸發推播：
+    - 08:30 晨間早盤快報
+    - 09:30 早盤起漲雷達
+    - 15:30 盤後精選快報
+    """
+    import time
+    from datetime import datetime
+    import data_engine
+    import strategy_engine
+
+    last_sent_slots = {}  # 格式: {"2026-09-08_0830": True}
+
+    while True:
+        try:
+            now = datetime.now()
+            today_str = now.strftime('%Y-%m-%d')
+            weekday = now.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+            hm = now.strftime('%H:%M')
+
+            # 僅在營業日 (週一至週五) 執行自動推播
+            if weekday < 5:
+                settings = load_alert_settings()
+                
+                # 1. 08:30 晨間早盤快報 (容許窗口 08:30 ~ 08:34)
+                if settings.get("enable_schedule_0830", True) and "08:30" <= hm <= "08:34":
+                    slot_key = f"{today_str}_0830"
+                    if slot_key not in last_sent_slots:
+                        radar = getattr(data_engine, 'get_night_session_radar', lambda: {})()
+                        send_morning_market_digest(radar=radar)
+                        last_sent_slots[slot_key] = True
+
+                # 2. 09:30 早盤起漲雷達 (容許窗口 09:30 ~ 09:34)
+                if settings.get("enable_schedule_0930", True) and "09:30" <= hm <= "09:34":
+                    slot_key = f"{today_str}_0930"
+                    if slot_key not in last_sent_slots:
+                        surge_picks = getattr(strategy_engine, 'get_intraday_volume_surge_radar', lambda limit=5: [])(limit=5)
+                        send_intraday_surge_digest(surge_picks=surge_picks)
+                        last_sent_slots[slot_key] = True
+
+                # 3. 15:30 盤後精選快報 (容許窗口 15:30 ~ 15:34)
+                if settings.get("enable_schedule_1530", True) and "15:30" <= hm <= "15:34":
+                    slot_key = f"{today_str}_1530"
+                    if slot_key not in last_sent_slots:
+                        picks = getattr(strategy_engine, 'get_short_term_catalyst_picks', lambda limit=5: [])(limit=5)
+                        regime = getattr(strategy_engine, 'calculate_market_regime', lambda: {})()
+                        send_daily_market_summary(picks, regime)
+                        last_sent_slots[slot_key] = True
+
+            # 清理前幾天的 slot 記錄以防字典過大
+            if len(last_sent_slots) > 30:
+                current_keys = [k for k in last_sent_slots.keys() if today_str in k]
+                last_sent_slots.clear()
+                for k in current_keys:
+                    last_sent_slots[k] = True
+
+        except Exception:
+            pass
+
+        time.sleep(25)  # 每 25 秒檢查一次
+
+def ensure_scheduler_running():
+    """確保守護排程線程在背景只啟動一次"""
+    global _scheduler_started
+    with _scheduler_lock:
+        if not _scheduler_started:
+            t = threading.Thread(target=_run_scheduler_loop, daemon=True, name="TwStockAlertScheduler")
+            t.start()
+            _scheduler_started = True
+
 

@@ -539,10 +539,26 @@ def get_night_session_radar():
                 radar['wtx']['price'] = p_str
                 radar['wtx']['change'] = float(c_str)
                 radar['wtx']['pct'] = float(pct_str)
-            # 時間
-            t_m = re.search(r'([0-9]{2}:[0-9]{2})\s*更新', text)
-            if t_m:
-                radar['wtx']['time'] = t_m.group(1)
+            # 日期與時間精確解析 (例如 2026/09/09 18:24 更新)
+            dt_m = re.search(r'([0-9]{4}/[0-9]{2}/[0-9]{2})\s*([0-9]{2}:[0-9]{2})\s*更新', text)
+            if dt_m:
+                d_part = dt_m.group(1)
+                t_part = dt_m.group(2)
+                radar['wtx']['date'] = d_part
+                radar['wtx']['time'] = t_part
+                try:
+                    dt = datetime.strptime(d_part, '%Y/%m/%d')
+                    w_days = ['一', '二', '三', '四', '五', '六', '日']
+                    w_str = w_days[dt.weekday()]
+                    radar['wtx']['datetime_str'] = f"{d_part} ({w_str}) {t_part}"
+                except Exception:
+                    radar['wtx']['datetime_str'] = f"{d_part} {t_part}"
+            else:
+                t_m = re.search(r'([0-9]{2}:[0-9]{2})\s*更新', text)
+                if t_m:
+                    radar['wtx']['time'] = t_m.group(1)
+                    now_str = datetime.now().strftime('%Y/%m/%d')
+                    radar['wtx']['datetime_str'] = f"{now_str} {t_m.group(1)}"
     except Exception:
         pass
 

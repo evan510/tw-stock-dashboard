@@ -51,12 +51,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 判斷台股盤中/盤後時段
-now = datetime.now()
-is_tw_trading = (now.weekday() < 5) and (
-    (now.hour == 9) or (now.hour > 9 and now.hour < 13) or (now.hour == 13 and now.minute <= 35)
-)
-market_time_tag = "🔴 盤中交易 (延遲15分)" if is_tw_trading else "🟢 盤後結算 (日K統計完備)"
+# 判斷台股盤中/盤後時段 (精確鎖定台灣台北時區 UTC+8)
+from datetime import timezone
+tw_tz = timezone(timedelta(hours=8))
+now_tw = datetime.now(tw_tz)
+
+is_trading_day_today, holiday_reason = is_tw_trading_day(now_tw.date())
+
+# 判斷當前是否為台股一般日盤開盤時段 (09:00 ~ 13:35)
+is_tw_trading = False
+if is_trading_day_today:
+    if (now_tw.hour == 9) or (9 < now_tw.hour < 13) or (now_tw.hour == 13 and now_tw.minute <= 35):
+        is_tw_trading = True
+
+# 依時段明確設定狀態標籤與燈號顏色：
+# 盤中: 綠色 (🟢)
+# 盤後/收盤: 紅色 (🔴)
+# 週末/休市: 琥珀黃 (🟡)
+if not is_trading_day_today:
+    status_dot_color = "#f59e0b"  # 琥珀黃
+    market_time_tag = f"⏸️ 假日休市 ({holiday_reason})"
+elif is_tw_trading:
+    status_dot_color = "#22c55e"  # 綠色
+    market_time_tag = "🟢 盤中交易 (延遲15分)"
+elif now_tw.hour < 9:
+    status_dot_color = "#f59e0b"  # 琥珀黃
+    market_time_tag = "🌙 盤前準備 (等候09:00開盤)"
+else:
+    status_dot_color = "#ef4444"  # 紅色
+    market_time_tag = "🔴 已收盤 (日K統計完備)"
+
 
 # ----------------- 頂級 RWD 深色專業操盤 CSS -----------------
 st.markdown("""
@@ -230,7 +254,7 @@ st.sidebar.markdown(
             <span class="pill pill-gold" style="margin:0;">{config.APP_VERSION}</span>
         </div>
         <div style="display:flex; align-items:center; margin-top:8px; gap:6px;">
-            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:{'#22c55e' if is_tw_trading else '#f59e0b'}; box-shadow:0 0 8px {'#22c55e' if is_tw_trading else '#f59e0b'};"></span>
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:{status_dot_color}; box-shadow:0 0 8px {status_dot_color};"></span>
             <span style="font-size:0.8rem; color:#cbd5e1; font-weight:500;">{market_time_tag}</span>
         </div>
     </div>
@@ -259,7 +283,7 @@ if st.sidebar.button("🔄 同步刷新數據", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 
-st.sidebar.caption(f"系統時間：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.sidebar.caption(f"系統時間：{now_tw.strftime('%Y-%m-%d %H:%M')}")
 st.sidebar.caption("✅ 支援手機 RWD 直式介面操作")
 
 # ================= 頁面 0：短線題材與法人連買 (5~20% 狙擊槍) =================
@@ -288,6 +312,9 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
     tsm_color = "#ef4444" if tsm.get('change', 0) > 0 else ("#22c55e" if tsm.get('change', 0) < 0 else "#94a3b8")
     nq_color = "#ef4444" if nq.get('change', 0) > 0 else ("#22c55e" if nq.get('change', 0) < 0 else "#94a3b8")
 
+    wtx_dt_display = wtx.get('datetime_str', wtx.get('time', now_tw.strftime('%Y/%m/%d %H:%M')))
+    wtx_date_short = wtx.get('date', now_tw.strftime('%m/%d'))[-5:] if wtx.get('date') else now_tw.strftime('%m/%d')
+
     st.markdown(f"""
     <div class="rwd-card" style="border-top: 3px solid {sentiment_color}; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 8px;">
@@ -297,13 +324,13 @@ if menu == "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)":
             </div>
             <div>
                 <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1; font-size:0.8rem;">
-                    ⏰ 更新：{wtx.get('time', datetime.now().strftime('%H:%M'))} (盤中15:00~次日05:00)
+                    ⏰ 盤面更新：{wtx_dt_display} (夜盤時段 15:00~次日05:00)
                 </span>
             </div>
         </div>
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px;">
             <div style="background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:8px; border-left:3px solid {wtx_color};">
-                <div style="font-size:0.8rem; color:#94a3b8;">🇹🇼 台指期夜盤 (WTX&)</div>
+                <div style="font-size:0.8rem; color:#94a3b8;">🇹🇼 台指期夜盤 ({wtx_date_short} 盤)</div>
                 <div style="font-size:1.25rem; font-weight:700; color:#f8fafc;">{wtx.get('price', '--')}</div>
                 <div style="font-size:0.88rem; font-weight:600; color:{wtx_color};">{wtx_chg_sign} ({wtx_pct_sign})</div>
             </div>

@@ -1102,96 +1102,114 @@ elif menu == "📈 6. 互動 K 線與指標圖室":
 elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
     st.title("💼 我的持股庫存管家與即時風險警報")
     
-    # 警報通知推播設定區塊
-    with st.expander("🔔 LINE 官方帳號 Bot / Webhook 警報通知設定（含圖文教學）", expanded=False):
+    # 雲端自動推播狀態與進階設定區塊
+    with st.container():
         alert_cfg = load_alert_settings()
-        
-        st.markdown("""
-        > 💡 **LINE 官方已公告 Line Notify 終止服務**。本系統已全面升級支援 **LINE Messaging API (官方帳號機器人)**！
-        > 每月提供個人 **200 則免費推播額度**，訊息依舊直達您的手機 LINE 聊天室！
-        """)
-
-        with st.expander("📖 點擊查看【LINE Developers 4 步設定教學】", expanded=False):
-            st.markdown("""
-            1. **登入後台**：前往 [LINE Developers Console](https://developers.line.biz/console/)，使用個人 LINE 帳號登入。
-            2. **建立 Provider & Channel**：建立一個 Provider (如 `MyStock`)，點選 **Create a new channel** 選擇 **「Messaging API」**。
-            3. **掃描加機器人為好友**：在 Channel 的 **「Messaging API」** 標籤頁掃描中間的 **QR code** 加機器人好友。
-            4. **取得金鑰並填入**：
-               - 在 **「Basic settings」** 標籤頁往下滑找到 **Your user ID** (格式為 `U` 開頭 33 碼字串)，複製貼入下方【LINE User ID】。
-               - 在 **「Messaging API」** 標籤頁往下滑到底部找到 **Channel access token**，點擊 **Issue** 發行，複製貼入下方【Channel Access Token】。
-            """)
-
-        n_c1, n_c2 = st.columns(2)
-        line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password", help="LINE Developers > Messaging API 頁籤最下方的 Channel access token")
-        line_user_id = n_c2.text_input("LINE User ID (您的帳號識別碼)：", value=alert_cfg.get("line_user_id", ""), type="password", help="LINE Developers > Basic settings 頁籤下方的 Your user ID (U開頭)")
-        
-        webhook_url = st.text_input("備用 Webhook URL (選填，如 Discord / Slack / Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
-        
-        st.markdown("#### ⏰ 營業日定時自動推播排程開關（可依需求自由勾選）")
-        sch_c1, sch_c2, sch_c3 = st.columns(3)
-        enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", True), help="夜盤行情總結 + 美股台積電ADR + 那指期貨 + 今日早盤跳空預估")
-        enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True), help="早盤預估爆量起漲 Top 3 飆股")
-        enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True), help="證交所法人連買 + 題材鎖碼 Top 5 懶人包")
-
         today_is_trade, trade_desc = is_tw_trading_day()
         trade_status_badge = "🟢 今日開盤" if today_is_trade else f"🔴 今日休市 ({trade_desc})"
-        only_trading_days = st.checkbox(
-            f"🚫 台股無交易日（休市/週末/國定假日）不發送推播  【目前狀態：{trade_status_badge}】",
-            value=alert_cfg.get("only_on_trading_days", True),
-            help="自動對接臺灣證券交易所官方市場開休市日曆，週末例假日、農曆春節、端午中秋與國定颱風假等休市期間自動暫停自動推播"
-        )
 
-        enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
+        # 頂部狀態卡片
+        st.markdown(f"""
+        <div class="rwd-card" style="border-left: 5px solid #22c55e; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:1.3rem;">⚡</span>
+                    <span style="font-size:1.05rem; font-weight:700; color:#f8fafc;">LINE 雲端定時推播服務 (由 GitHub Actions 託管)</span>
+                </div>
+                <div>
+                    <span class="pill pill-buy">🟢 雲端排程全時待命中</span>
+                    <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1;">{trade_status_badge}</span>
+                </div>
+            </div>
+            <p style="font-size:0.86rem; color:#94a3b8; margin:8px 0 6px 0;">
+                即使關閉電腦或瀏覽器，GitHub Actions 伺服器亦將在營業日依時段準時推播至您的手機 LINE，不受網頁休眠限制。
+            </p>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size:0.84rem; color:#cbd5e1; margin-top:8px;">
+                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">☀️ <b>08:30</b> 晨間早盤夜盤風向</div>
+                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">⚡ <b>09:30</b> 早盤起漲爆量雷達</div>
+                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">🚀 <b>15:30</b> 盤後三大法人精選榜</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        btn_save_alert, btn_test_line = st.columns(2)
-        if btn_save_alert.button("💾 儲存通知設定", use_container_width=True):
-            alert_cfg["line_channel_token"] = line_channel_token.strip()
-            alert_cfg["line_user_id"] = line_user_id.strip()
-            alert_cfg["webhook_url"] = webhook_url.strip()
-            alert_cfg["enable_schedule_0830"] = enable_0830
-            alert_cfg["enable_schedule_0930"] = enable_0930
-            alert_cfg["enable_schedule_1530"] = enable_1530
-            alert_cfg["only_on_trading_days"] = only_trading_days
-            alert_cfg["enable_stop_loss_alert"] = enable_stop
-            save_alert_settings(alert_cfg)
-            st.success("通知設定與排程設定已成功儲存！")
-
-        if btn_test_line.button("📲 發送測試連線訊息", use_container_width=True):
-            ok, msg = send_line_messaging_api(
-                "【台股戰情室 v4.4.2】LINE 官方帳號機器人推播連線測試成功！✅\n系統背景排程已就緒：\n• 08:30 晨間快報\n• 09:30 早盤雷達\n• 15:30 盤後精選",
-                channel_access_token=line_channel_token.strip(),
-                user_id=line_user_id.strip()
+        # 快速操作與 GitHub 跳轉
+        act_col1, act_col2 = st.columns([1, 1])
+        with act_col1:
+            st.link_button(
+                "🌐 前往 GitHub Actions 查看排程日誌 / 雲端手動觸發",
+                url="https://github.com/evan510/tw-stock-dashboard/actions",
+                use_container_width=True
             )
-            if ok:
-                st.success(msg)
-            else:
-                st.error(f"發送失敗：{msg}")
+        with act_col2:
+            st.link_button(
+                "🔑 設定 GitHub Repository Secrets (LINE Token 密鑰)",
+                url="https://github.com/evan510/tw-stock-dashboard/settings/secrets/actions",
+                use_container_width=True
+            )
 
-        st.markdown("##### 🧪 立即手動測試 3 大快報推播效果")
+        # 立即手動測試 3 大快報推播效果
+        st.markdown("##### 🧪 立即手動測試推播效果（發送到您的手機 LINE）")
         t_c1, t_c2, t_c3 = st.columns(3)
-        if t_c1.button("☀️ 測試推播 08:30 晨間快報", use_container_width=True):
+        if t_c1.button("☀️ 測試 08:30 晨間快報", use_container_width=True):
             radar = get_night_session_radar()
-            ok, msg = send_morning_market_digest(radar, channel_token=line_channel_token.strip(), user_id=line_user_id.strip())
-            if ok: st.success("已發送 08:30 晨間快報至手機！")
+            ok, msg = send_morning_market_digest(radar)
+            if ok: st.success("已發送 08:30 晨間快報至手機 LINE！")
             else: st.error(msg)
             
-        if t_c2.button("⚡ 測試推播 09:30 早盤起漲", use_container_width=True):
+        if t_c2.button("⚡ 測試 09:30 早盤起漲", use_container_width=True):
             surge_picks = get_intraday_volume_surge_radar(limit=5)
-            ok, msg = send_intraday_surge_digest(surge_picks, channel_token=line_channel_token.strip(), user_id=line_user_id.strip())
-            if ok: st.success("已發送 09:30 早盤起漲雷達至手機！")
+            ok, msg = send_intraday_surge_digest(surge_picks)
+            if ok: st.success("已發送 09:30 早盤起漲雷達至手機 LINE！")
             else: st.error(msg)
 
-        if t_c3.button("🚀 測試推播 15:30 盤後精選", use_container_width=True):
+        if t_c3.button("🚀 測試 15:30 盤後精選", use_container_width=True):
             picks_for_line = get_short_term_catalyst_picks(limit=5)
             regime_for_line = calculate_market_regime()
-            ok, msg = send_daily_market_summary(
-                picks_for_line,
-                regime_for_line,
-                channel_token=line_channel_token.strip(),
-                user_id=line_user_id.strip()
-            )
-            if ok: st.success("已發送 15:30 盤後精選快報至手機！")
+            ok, msg = send_daily_market_summary(picks_for_line, regime_for_line)
+            if ok: st.success("已發送 15:30 盤後精選快報至手機 LINE！")
             else: st.error(msg)
+
+        # 將複雜設定收納入折疊選單
+        with st.expander("⚙️ 本機推播金鑰與排程自訂開關（進階設定）", expanded=False):
+            st.caption("提示：若您已在 GitHub Secrets 填寫 `LINE_CHANNEL_TOKEN` 與 `LINE_USER_ID`，雲端排程會自動採用。此處供本機看盤時設定使用。")
+            n_c1, n_c2 = st.columns(2)
+            line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password")
+            line_user_id = n_c2.text_input("LINE User ID：", value=alert_cfg.get("line_user_id", ""), type="password")
+            webhook_url = st.text_input("備用 Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
+            
+            st.markdown("##### ⏰ 排程推播時段開關")
+            sch_c1, sch_c2, sch_c3 = st.columns(3)
+            enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", True))
+            enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True))
+            enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True))
+
+            only_trading_days = st.checkbox(
+                "🚫 台股無交易日（休市/週末/國定假日）不發送推播",
+                value=alert_cfg.get("only_on_trading_days", True)
+            )
+            enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
+
+            btn_save_alert, btn_test_conn = st.columns(2)
+            if btn_save_alert.button("💾 儲存本機通知設定", use_container_width=True):
+                alert_cfg["line_channel_token"] = line_channel_token.strip()
+                alert_cfg["line_user_id"] = line_user_id.strip()
+                alert_cfg["webhook_url"] = webhook_url.strip()
+                alert_cfg["enable_schedule_0830"] = enable_0830
+                alert_cfg["enable_schedule_0930"] = enable_0930
+                alert_cfg["enable_schedule_1530"] = enable_1530
+                alert_cfg["only_on_trading_days"] = only_trading_days
+                alert_cfg["enable_stop_loss_alert"] = enable_stop
+                save_alert_settings(alert_cfg)
+                st.success("本機通知設定已成功儲存！")
+
+            if btn_test_conn.button("📲 測試連線金鑰", use_container_width=True):
+                ok, msg = send_line_messaging_api(
+                    "【台股戰情室 v4.4.3】LINE 連線測試正常！✅",
+                    channel_access_token=line_channel_token.strip(),
+                    user_id=line_user_id.strip()
+                )
+                if ok: st.success(msg)
+                else: st.error(f"連線失敗：{msg}")
                 
     st.markdown("---")
     with st.expander("➕ 新增持股 / ETF 記錄", expanded=False):

@@ -1,7 +1,7 @@
 import threading
 import streamlit as st
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 import data_engine
@@ -52,7 +52,6 @@ st.set_page_config(
 )
 
 # 判斷台股盤中/盤後時段 (精確鎖定台灣台北時區 UTC+8)
-from datetime import timezone
 tw_tz = timezone(timedelta(hours=8))
 now_tw = datetime.now(tw_tz)
 

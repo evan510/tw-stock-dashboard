@@ -30,8 +30,22 @@ def load_alert_settings():
             for k, v in default_settings.items():
                 if k not in data:
                     data[k] = v
+            # 支援環境變數優先覆蓋 (供 GitHub Actions / Streamlit Secrets 使用)
+            if os.environ.get("LINE_CHANNEL_TOKEN"):
+                data["line_channel_token"] = os.environ["LINE_CHANNEL_TOKEN"].strip()
+            if os.environ.get("LINE_USER_ID"):
+                data["line_user_id"] = os.environ["LINE_USER_ID"].strip()
+            if os.environ.get("WEBHOOK_URL"):
+                data["webhook_url"] = os.environ["WEBHOOK_URL"].strip()
             return data
     except Exception:
+        # 當找不到檔案時，仍檢查環境變數
+        if os.environ.get("LINE_CHANNEL_TOKEN"):
+            default_settings["line_channel_token"] = os.environ["LINE_CHANNEL_TOKEN"].strip()
+        if os.environ.get("LINE_USER_ID"):
+            default_settings["line_user_id"] = os.environ["LINE_USER_ID"].strip()
+        if os.environ.get("WEBHOOK_URL"):
+            default_settings["webhook_url"] = os.environ["WEBHOOK_URL"].strip()
         return default_settings
 
 def save_alert_settings(settings):

@@ -51,6 +51,13 @@ jobs:
           SLOT_ARG="auto"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SLOT_ARG="${{ github.event.inputs.slot }}"
+          elif [ "${{ github.event.schedule }}" = "28 0 * * 1-5" ]; then
+            SLOT_ARG="0830"
+          elif [ "${{ github.event.schedule }}" = "28 1 * * 1-5" ]; then
+            SLOT_ARG="0930"
+          elif [ "${{ github.event.schedule }}" = "28 7 * * 1-5" ]; then
+            SLOT_ARG="1530"
           fi
+          echo "執行時段: $SLOT_ARG (事件來源: ${{ github.event_name }}, 排程定義: ${{ github.event.schedule }})"
           python run_scheduled_push.py "$SLOT_ARG"
 

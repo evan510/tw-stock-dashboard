@@ -3,21 +3,23 @@ name: 台股戰情室定時推播服務
 on:
   schedule:
     # GitHub Actions 使用 UTC 時間 (台灣時間 UTC+8)
-    # 台灣時間 08:30 -> UTC 00:30 (週一到週五)
-    - cron: '30 0 * * 1-5'
-    # 台灣時間 09:30 -> UTC 01:30 (週一到週五)
-    - cron: '30 1 * * 1-5'
-    # 台灣時間 15:30 -> UTC 07:30 (週一到週五)
-    - cron: '30 7 * * 1-5'
+    # 避開全球整點與半點排隊塞車高峰，微調前置幾分鐘：
+    # 台灣時間 08:28 -> UTC 00:28 (週一到週五)
+    - cron: '28 0 * * 1-5'
+    # 台灣時間 09:28 -> UTC 01:28 (週一到週五)
+    - cron: '28 1 * * 1-5'
+    # 台灣時間 15:28 -> UTC 07:28 (週一到週五)
+    - cron: '28 7 * * 1-5'
   # 支援在 GitHub 網頁上手動點擊立即測試 (workflow_dispatch)
   workflow_dispatch:
     inputs:
       slot:
-        description: '選擇要測試推播的時段 (0830, 0930, 1530)'
+        description: '選擇要測試推播的時段 (auto, 0830, 0930, 1530)'
         required: true
-        default: '1530'
+        default: 'auto'
         type: choice
         options:
+          - 'auto'
           - '0830'
           - '0930'
           - '1530'
@@ -40,24 +42,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 計算當前時段並執行推播
+      - name: 執行推播腳本
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          # 若為手動觸發，取指定參數；若為自動定時，依 UTC 小時判斷 (00->0830, 01->0930, 07->1530)
+          SLOT_ARG="auto"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SLOT="${{ github.event.inputs.slot }}"
-          else
-            UTC_H=$(date -u +%H)
-            if [ "$UTC_H" -eq 0 ]; then
-              SLOT="0830"
-            elif [ "$UTC_H" -eq 1 ]; then
-              SLOT="0930"
-            else
-              SLOT="1530"
-            fi
+            SLOT_ARG="${{ github.event.inputs.slot }}"
           fi
-          echo "當前執行的推播時段為: $SLOT"
-          python run_scheduled_push.py $SLOT
+          python run_scheduled_push.py "$SLOT_ARG"
+

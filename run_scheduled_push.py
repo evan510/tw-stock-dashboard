@@ -19,11 +19,30 @@ import strategy_engine
 import notifier
 
 def main():
-    slot = sys.argv[1] if len(sys.argv) > 1 else "1530"
-    now = datetime.now()
-    today_date = now.date()
+    arg_slot = sys.argv[1] if len(sys.argv) > 1 else "auto"
 
-    print(f"=== [台股戰情室 GitHub Actions 排程推播] 執行時段: {slot} | 當前時間: {now.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    # 強制鎖定台灣時間 (UTC+8)
+    from datetime import timezone, timedelta
+    tw_tz = timezone(timedelta(hours=8))
+    now_tw = datetime.now(tw_tz)
+    today_date = now_tw.date()
+    hm = now_tw.strftime('%H%M')
+
+    # 自動判斷時段
+    if arg_slot == "auto":
+        # 07:00 ~ 09:10 判定為 08:30 晨間早盤快報
+        if "0700" <= hm <= "0910":
+            slot = "0830"
+        # 09:11 ~ 11:30 判定為 09:30 早盤起漲雷達
+        elif "0911" <= hm <= "1130":
+            slot = "0930"
+        # 其餘時段 (11:31 之後) 判定為 15:30 盤後精選快報
+        else:
+            slot = "1530"
+    else:
+        slot = arg_slot
+
+    print(f"=== [台股戰情室 GitHub Actions 排程推播] 執行時段: {slot} (輸入: {arg_slot}) | 台灣時間: {now_tw.strftime('%Y-%m-%d %H:%M:%S')} ===")
 
     settings = notifier.load_alert_settings()
 

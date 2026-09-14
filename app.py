@@ -42,6 +42,11 @@ from notifier import (
     send_intraday_surge_digest,
     ensure_scheduler_running
 )
+from guru_engine import (
+    get_zhezhe_weekly_insights,
+    get_oldwang_weekly_insights,
+    evaluate_guru_with_ai
+)
 import config
 
 st.set_page_config(
@@ -267,12 +272,13 @@ menu = st.sidebar.radio(
         "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)",
         "🩺 1. 個股診斷室 (AI 深度量化與燈號)",
         "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)",
-        "👑 3. 老王均線獨門戰法 (萬里無雲/買黑不買紅)",
-        "🎯 4. 投信鎖碼波段選股榜",
-        "🌐 5. 盤後宏觀與法人籌碼",
-        "📈 6. 互動 K 線與指標圖室",
-        "💼 7. 庫存管家與防守警報 (含Line通知)",
-        "📖 8. 短線與波段操盤心法"
+        "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)",
+        "👑 4. 老王均線獨門戰法 (萬里無雲/買黑不買紅)",
+        "🎯 5. 投信鎖碼波段選股榜",
+        "🌐 6. 盤後宏觀與法人籌碼",
+        "📈 7. 互動 K 線與指標圖室",
+        "💼 8. 庫存管家與防守警報 (含Line通知)",
+        "📖 9. 短線與波段操盤心法"
     ],
     label_visibility="collapsed"
 )
@@ -933,8 +939,204 @@ elif menu == "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)":
         ])
         st.dataframe(df_c, use_container_width=True)
 
-# ================= 頁面 3：老王均線獨門戰法 (萬里無雲/買黑不買紅) =================
-elif menu == "👑 3. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":
+# ================= 頁面 3：名師每週影音前瞻 (老王/哲哲 AI雙軌共振) =================
+elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)":
+    st.title("🎙️ 名師每週影音前瞻與 AI 雙軌共振室")
+    st.caption("即時爬取 YouTube 官方最新 7 天盤後影音與逐字講評，名師觀點與 AI 數據客觀分開，提供最公正的共振決策！")
+    
+    guru_tab_zhezhe, guru_tab_oldwang = st.tabs([
+        "🔥 哲哲 (郭哲榮) 最新 7 天影音深度解構",
+        "👑 老王 (王倚隆) 最新 7 天影音與時間軸個股"
+    ])
+    
+    with guru_tab_zhezhe:
+        st.subheader("🔥 哲哲 (郭哲榮 摩爾投顧) 最新盤勢觀點與精選個股")
+        st.markdown("""
+        <div style="background:rgba(239,68,68,0.08); border-left:4px solid #ef4444; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
+            <b>📌 分析機制：</b>自動下載 YouTube 官方繁中字幕逐字稿，精準比對被動元件、矽晶圓、AI 伺服器等熱門焦點，擷取名師原始觀點、影片時間軸與多空論述。
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.spinner("連線 YouTube 官方影音庫，解析哲哲最新 7 天逐字字幕中..."):
+            raw_z_list = get_zhezhe_weekly_insights(max_days=7)
+            
+        if raw_z_list:
+            seen_symbols = set()
+            unique_z_list = []
+            for item in raw_z_list:
+                if item['symbol'] not in seen_symbols:
+                    seen_symbols.add(item['symbol'])
+                    unique_z_list.append(item)
+                    
+            st.markdown(f"**共擷取到 {len(unique_z_list)} 檔哲哲核心點名標的**（依最近影音排序）：")
+            
+            for item in unique_z_list:
+                evaluated = evaluate_guru_with_ai(item)
+                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
+                r_color = evaluated.get('resonance_color', '#f59e0b')
+                r_desc = evaluated.get('resonance_desc', '')
+                
+                st.markdown(f"""
+                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
+                            </h3>
+                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
+                            <span class="pill" style="background:rgba(59,130,246,0.15); color:#60a5fa;">⏱️ 影片時間 {item['time_tag']}</span>
+                        </div>
+                        <div>
+                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
+                                {item['stance']}
+                            </span>
+                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
+                                {r_badge}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
+                        <!-- 欄位 1: 哲哲原音觀點 (絕對獨立) -->
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#f87171; font-size:0.9rem; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+                                <span>🎙️ 哲哲原始觀點 (原話摘錄)</span>
+                            </div>
+                            <p style="font-size:0.88rem; color:#e2e8f0; line-height:1.5; margin:0; font-style:italic;">
+                                「{item['quote']}」
+                            </p>
+                            <div style="margin-top:8px;">
+                                <a href="{item['video_url']}" target="_blank" style="font-size:0.8rem; color:#60a5fa; text-decoration:none;">
+                                    ▶️ 點此跳轉觀看此段影片 ({item['time_tag']})
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <!-- 欄位 2: AI 客觀量化診斷 (絕對獨立) -->
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                <span>🤖 AI 客觀數據體檢 (純技術/籌碼)</span>
+                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                            </div>
+                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
+                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
+                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
+                                <div>• AI行動訊號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
+                                <div style="margin-top:4px;">
+                                    {" ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 欄位 3: 觀點共振雷達結論 -->
+                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
+                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_z_{item['symbol']}"):
+                    st.session_state.diag_stock_query = item['symbol']
+                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 1. 個股診斷室】查看完整籌碼與技術大圖！")
+        else:
+            st.info("目前 7 天內未偵測到哲哲提及之指定核心標的，請點擊側邊欄【🔄 同步刷新數據】重新擷取。")
+
+    with guru_tab_oldwang:
+        st.subheader("👑 老王 (王倚隆 浦惠投顧) 最新盤勢觀點與每週焦點個股")
+        st.markdown("""
+        <div style="background:rgba(245,158,11,0.08); border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
+            <b>📌 分析機制：</b>自動解析老王愛說笑最新盤後影片、精選「今日我最熱/最弱」單元，並自動索引說明欄談及之全數個股與時間軸。
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.spinner("連線 YouTube 官方影音庫，解析老王最新盤後影片中..."):
+            raw_w_list = get_oldwang_weekly_insights(max_days=7)
+            
+        if raw_w_list:
+            seen_w_symbols = set()
+            unique_w_list = []
+            for item in raw_w_list:
+                if item['symbol'] not in seen_w_symbols:
+                    seen_w_symbols.add(item['symbol'])
+                    unique_w_list.append(item)
+                    
+            st.markdown(f"**共擷取到 {len(unique_w_list)} 檔老王深度追蹤標的**：")
+            
+            for item in unique_w_list:
+                evaluated = evaluate_guru_with_ai(item)
+                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
+                r_color = evaluated.get('resonance_color', '#f59e0b')
+                r_desc = evaluated.get('resonance_desc', '')
+                
+                st.markdown(f"""
+                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
+                            </h3>
+                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
+                            <span class="pill" style="background:rgba(245,158,11,0.15); color:#fbbf24;">⏱️ {item['time_tag']}</span>
+                        </div>
+                        <div>
+                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
+                                {item['stance']}
+                            </span>
+                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
+                                {r_badge}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
+                        <!-- 欄位 1: 老王觀點 -->
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">
+                                👑 老王原話講評 / 節目焦點
+                            </div>
+                            <p style="font-size:0.88rem; color:#e2e8f0; line-height:1.5; margin:0;">
+                                {item['quote']}
+                            </p>
+                            <div style="margin-top:8px;">
+                                <a href="{item['video_url']}" target="_blank" style="font-size:0.8rem; color:#60a5fa; text-decoration:none;">
+                                    ▶️ 前往老王影片觀看此集節目
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <!-- 欄位 2: AI 客觀量化診斷 -->
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
+                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                            </div>
+                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
+                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
+                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
+                                <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
+                                <div style="margin-top:4px;">
+                                    {" ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 欄位 3: 共振判定 -->
+                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
+                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_w_{item['symbol']}"):
+                    st.session_state.diag_stock_query = item['symbol']
+                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 1. 個股診斷室】查看完整籌碼與技術大圖！")
+        else:
+            st.info("目前 7 天內未擷取到老王分析之個股清單，請稍候再試。")
+
+# ================= 頁面 4：老王均線獨門戰法 (萬里無雲/買黑不買紅) =================
+elif menu == "👑 4. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":
     st.title("👑 老王均線獨門戰法特輯")
     st.caption("源自《oldwangstock 老王愛說笑》操盤金律：均線為最高天條、萬里無雲、買黑不買紅、破線無條件停損！")
     
@@ -1022,8 +1224,8 @@ elif menu == "👑 3. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":
                 else:
                     st.success(ow_res['exit_alert'])
 
-# ================= 頁面 4：投信鎖碼波段選股榜 =================
-elif menu == "🎯 4. 投信鎖碼波段選股榜":
+# ================= 頁面 5：投信鎖碼波段選股榜 =================
+elif menu == "🎯 5. 投信鎖碼波段選股榜":
     st.title("🎯 投信鎖碼波段選股榜")
     st.caption("連線證交所全市場投信真實買超前 30 名，多因子挑出 Top 5")
     
@@ -1062,8 +1264,8 @@ elif menu == "🎯 4. 投信鎖碼波段選股榜":
         ])
         st.dataframe(df_display, use_container_width=True)
 
-# ================= 頁面 5：盤後宏觀與法人籌碼 =================
-elif menu == "🌐 5. 盤後宏觀與法人籌碼":
+# ================= 頁面 6：盤後宏觀與法人籌碼 =================
+elif menu == "🌐 6. 盤後宏觀與法人籌碼":
     st.title("🌐 盤後宏觀總覽與三大法人資金風向標")
     macro = get_macro_overview()
     funds = get_institutional_investors_summary()
@@ -1078,7 +1280,7 @@ elif menu == "🌐 5. 盤後宏觀與法人籌碼":
     with col4:
         st.metric("輝達 NVDA", f"${macro.get('輝達 (NVDA)',{}).get('close',0)}", f"{macro.get('輝達 (NVDA)',{}).get('pct',0)}%")
     with col5:
-        st.metric("費城半導體", f"{macro.get('費城半導體',{}).get('close',0)}", f"{macro.get('費城半導體',{}).get('pct',0)}%")
+        st.metric("費城半導體", f"${macro.get('費城半導體',{}).get('close',0)}", f"{macro.get('費城半導體',{}).get('pct',0)}%")
     st.markdown("---")
     st.subheader("💰 三大法人當日買賣超 (億元)")
     f1, f2, f3, f4 = st.columns(4)
@@ -1087,8 +1289,8 @@ elif menu == "🌐 5. 盤後宏觀與法人籌碼":
     f3.metric("自營商買賣超", f"{funds['自營商']} 億", delta=f"{funds['自營商']}")
     f4.metric("三大法人總計", f"{funds['合計']} 億", delta=f"{funds['合計']}")
 
-# ================= 頁面 6：互動 K 線與指標圖室 =================
-elif menu == "📈 6. 互動 K 線與指標圖室":
+# ================= 頁面 7：互動 K 線與指標圖室 =================
+elif menu == "📈 7. 互動 K 線與指標圖室":
     st.title("📈 專業互動 K 線圖室 (台股 紅漲 🔴 / 綠跌 🟢)")
     st.caption("支援輸入代號（如 00878, 0050, 6467）或中文名稱（如 泰合, 仁新）")
     col_k1, col_k2 = st.columns([3, 1])
@@ -1124,8 +1326,8 @@ elif menu == "📈 6. 互動 K 線與指標圖室":
         else:
             st.error(f"查無 {real_name} ({real_sym}) 之歷史量價數據。")
 
-# ================= 頁面 7：庫存管家與防守警報 (含Line通知) =================
-elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
+# ================= 頁面 8：庫存管家與防守警報 (含Line通知) =================
+elif menu == "💼 8. 庫存管家與防守警報 (含Line通知)":
     st.title("💼 我的持股庫存管家與即時風險警報")
     
     # 雲端自動推播狀態與進階設定區塊
@@ -1157,6 +1359,26 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # 外部精準 Webhook 方案推薦卡片 (解決 GitHub 排程塞車)
+        with st.expander("⚡ 終極抗延遲方案：如何解決 GitHub 免費排程塞車延遲？(推薦設定)", expanded=False):
+            st.markdown("""
+            **❓ 為什麼有時候 08:30 沒有準時收到？**
+            * GitHub Actions 內建的 `schedule: cron` 排程在全球尖峰時刻（如亞洲開盤的早晨）常會被 GitHub 免費伺服器延遲 1~3 小時。
+            * 但只要是 **外部呼叫觸發 (`workflow_dispatch`)**，GitHub 伺服器保證在 **30 秒內秒級啟動**！
+            
+            **🚀 零成本徹底解決方案 (3 分鐘完成設定)：**
+            1. 前往免費排程網站 **[cron-job.org](https://cron-job.org/)** 註冊一個免費帳號。
+            2. 新增 3 個 Cronjob（分別設定為週一到週五的 08:28、09:28、15:28 台灣時間）：
+               - **URL 網址**：`https://api.github.com/repos/evan510/tw-stock-dashboard/actions/workflows/scheduled_push.yml/dispatches`
+               - **Request Method**：`POST`
+               - **Headers**：
+                 - `Authorization: Bearer <您的 GitHub Personal Access Token>`
+                 - `Accept: application/vnd.github.v3+json`
+                 - `User-Agent: CronJob-Client`
+               - **Body (JSON)**：`{"ref": "main"}`
+            3. 這樣一來，每天時間一到，外部伺服器會立即發送 API 命令，GitHub Actions 將會**一秒不差立刻啟動並推播到您的手機 LINE**！
+            """)
 
         # 快速操作與 GitHub 跳轉
         act_col1, act_col2 = st.columns([1, 1])
@@ -1230,7 +1452,7 @@ elif menu == "💼 7. 庫存管家與防守警報 (含Line通知)":
 
             if btn_test_conn.button("📲 測試連線金鑰", use_container_width=True):
                 ok, msg = send_line_messaging_api(
-                    "【台股戰情室 v4.4.3】LINE 連線測試正常！✅",
+                    "【台股戰情室 v4.5.0】LINE 連線測試正常！✅",
                     channel_access_token=line_channel_token.strip(),
                     user_id=line_user_id.strip()
                 )

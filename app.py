@@ -1,4 +1,5 @@
 import threading
+import textwrap
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
@@ -976,7 +977,8 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                 r_color = evaluated.get('resonance_color', '#f59e0b')
                 r_desc = evaluated.get('resonance_desc', '')
                 
-                st.markdown(f"""
+                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
+                card_html = textwrap.dedent(f"""
                 <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                         <div>
@@ -995,9 +997,7 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                             </span>
                         </div>
                     </div>
-                    
                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
-                        <!-- 欄位 1: 哲哲原音觀點 (絕對獨立) -->
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#f87171; font-size:0.9rem; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
                                 <span>🎙️ 哲哲原始觀點 (原話摘錄)</span>
@@ -1011,8 +1011,6 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                                 </a>
                             </div>
                         </div>
-                        
-                        <!-- 欄位 2: AI 客觀量化診斷 (絕對獨立) -->
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
                                 <span>🤖 AI 客觀數據體檢 (純技術/籌碼)</span>
@@ -1023,18 +1021,17 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                                 <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
                                 <div>• AI行動訊號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
                                 <div style="margin-top:4px;">
-                                    {" ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])}
+                                    {ai_tags_html}
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- 欄位 3: 觀點共振雷達結論 -->
                     <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
                         <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """).strip()
+                st.markdown(card_html, unsafe_allow_html=True)
                 
                 if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_z_{item['symbol']}"):
                     st.session_state.diag_stock_query = item['symbol']
@@ -1069,7 +1066,8 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                 r_color = evaluated.get('resonance_color', '#f59e0b')
                 r_desc = evaluated.get('resonance_desc', '')
                 
-                st.markdown(f"""
+                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
+                card_html = textwrap.dedent(f"""
                 <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                         <div>
@@ -1088,9 +1086,7 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                             </span>
                         </div>
                     </div>
-                    
                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
-                        <!-- 欄位 1: 老王觀點 -->
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">
                                 👑 老王原話講評 / 節目焦點
@@ -1104,8 +1100,6 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                                 </a>
                             </div>
                         </div>
-                        
-                        <!-- 欄位 2: AI 客觀量化診斷 -->
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
                                 <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
@@ -1116,18 +1110,17 @@ elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)
                                 <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
                                 <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
                                 <div style="margin-top:4px;">
-                                    {" ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])}
+                                    {ai_tags_html}
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <!-- 欄位 3: 共振判定 -->
                     <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
                         <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """).strip()
+                st.markdown(card_html, unsafe_allow_html=True)
                 
                 if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_w_{item['symbol']}"):
                     st.session_state.diag_stock_query = item['symbol']

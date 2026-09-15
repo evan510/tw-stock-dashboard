@@ -17,6 +17,8 @@ import streamlit as st
 import data_engine
 import strategy_engine
 from config import STOCK_NAME_MAP
+import data_cache
+import gemini_engine
 
 ZHEZHE_CHANNEL_ID = "UChfl3auNxAxOR3wy8a8ysQQ"  # 郭哲榮分析師-摩爾證券投顧
 OLDWANG_CHANNEL_ID = "UCvnLmiWt_zIVIh0zUm_j4Hw"  # 老王愛說笑
@@ -130,69 +132,122 @@ def get_zhezhe_weekly_insights(max_days=7):
 
     for vid_info in videos[:4]:  # 最多取近 4 支主要節目
         vid = vid_info["video_id"]
+        
+        # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
+        cached = data_cache.get_guru_analysis_from_cache(vid)
+        if cached and "items" in cached:
+            results.extend(cached["items"])
+            continue
+
+        vid_items = []
         transcript_data = fetch_video_transcript(vid)
         
         if transcript_data:
             full_text = " ".join([d.text for d in transcript_data])
             
-            for symbol, name, aliases in focus_pool:
-                # 檢查是否有提到
-                matched_alias = None
-                for a in aliases:
-                    if a in full_text:
-                        matched_alias = a
-                        break
-                
-                if matched_alias:
-                    # 抓取該標的出現的字幕片段與時間戳
-                    quotes = []
-                    stance = "觀望 / 點名提及"
-                    stance_color = "#f59e0b"
+            # 若有設定 Gemini API Key，呼叫 Gemini 進行專業繁中長逐字稿提煉
+            gemini_res = gemini_engine.analyze_guru_content_with_gemini(
+                guru_name="郭哲榮 (哲哲)",
+                video_title=vid_info["title"],
+                transcript_or_desc=full_text
+            )
+            if gemini_res and gemini_res.get("mentioned_stocks"):
+                for stk in gemini_res["mentioned_stocks"]:
+                    sym = stk.get("symbol", "").strip()
+                    sname = stk.get("name", "").strip()
+                    if not sym and sname in POPULAR_STOCK_LOOKUP:
+                        sym = POPULAR_STOCK_LOOKUP[sname]
+                    if not sym:
+                        continue
                     
-                    for idx, seg in enumerate(transcript_data):
-                        if matched_alias in seg.text:
-                            start_sec = int(seg.start)
-                            mm = start_sec // 60
-                            ss = start_sec % 60
-                            time_tag = f"{mm:02d}:{ss:02d}"
-                            
-                            # 抓取前後上下文
-                            start_idx = max(0, idx - 1)
-                            end_idx = min(len(transcript_data), idx + 2)
-                            context = " ".join([transcript_data[j].text for j in range(start_idx, end_idx)])
-                            
-                            quotes.append({
-                                "time": time_tag,
-                                "seconds": start_sec,
-                                "context": context
-                            })
-                            
-                            # 多空傾向關鍵字判定
-                            if any(k in context for k in ['用力做多', '買進', '加碼', '飆股', '送給你禮物', '大漲', '看好', '怕什麼', '不用怕', '低點']):
-                                stance = "🟢 強力看多 / 建議買進"
-                                stance_color = "#10b981"
-                            elif any(k in context for k in ['不要再加碼', '頂多三成', '賣出', '避開', '危險', '減碼', '弱勢']):
-                                stance = "🔴 減碼避開 / 逢高調節"
-                                stance_color = "#ef4444"
+                    stc = stk.get("stance", "看多")
+                    stc_color = "#10b981" if any(x in stc for x in ["多", "買", "好"]) else "#ef4444"
+                    
+                    vid_items.append({
+                        "guru": "哲哲 (郭哲榮)",
+                        "symbol": sym,
+                        "name": sname or STOCK_NAME_MAP.get(sym, sym),
+                        "video_title": vid_info["title"],
+                        "video_url": vid_info["url"],
+                        "published_date": vid_info["published_date"],
+                        "time_tag": "AI深度精選",
+                        "stance": f"✨ Gemini解讀: {stc}",
+                        "stance_color": stc_color,
+                        "quote": stk.get("guru_quote", stk.get("action_trigger", "本集重點關注標的")),
+                        "defense_price": stk.get("defense_price", "依個人風險紀律"),
+                        "guru_summary": gemini_res.get("guru_summary", ""),
+                        "total_mentions": 3
+                    })
 
-                    if quotes:
-                        # 取最精華的一至兩句
-                        best_quote = quotes[-1]["context"]
-                        best_time = quotes[-1]["time"]
+            # 如果 Gemini 解析無有效個股或未配置 Key，使用原生字典匹配
+            if not vid_items:
+                for symbol, name, aliases in focus_pool:
+                    # 檢查是否有提到
+                    matched_alias = None
+                    for a in aliases:
+                        if a in full_text:
+                            matched_alias = a
+                            break
+                    
+                    if matched_alias:
+                        # 抓取該標的出現的字幕片段與時間戳
+                        quotes = []
+                        stance = "觀望 / 點名提及"
+                        stance_color = "#f59e0b"
                         
-                        results.append({
-                            "guru": "哲哲 (郭哲榮)",
-                            "symbol": symbol,
-                            "name": name,
-                            "video_title": vid_info["title"],
-                            "video_url": f"{vid_info['url']}&t={quotes[-1]['seconds']}s",
-                            "published_date": vid_info["published_date"],
-                            "time_tag": best_time,
-                            "stance": stance,
-                            "stance_color": stance_color,
-                            "quote": best_quote,
-                            "total_mentions": len(quotes)
-                        })
+                        for idx, seg in enumerate(transcript_data):
+                            if matched_alias in seg.text:
+                                start_sec = int(seg.start)
+                                mm = start_sec // 60
+                                ss = start_sec % 60
+                                time_tag = f"{mm:02d}:{ss:02d}"
+                                
+                                # 抓取前後上下文
+                                start_idx = max(0, idx - 1)
+                                end_idx = min(len(transcript_data), idx + 2)
+                                context = " ".join([transcript_data[j].text for j in range(start_idx, end_idx)])
+                                
+                                quotes.append({
+                                    "time": time_tag,
+                                    "seconds": start_sec,
+                                    "context": context
+                                })
+                                
+                                # 多空傾向關鍵字判定
+                                if any(k in context for k in ['用力做多', '買進', '加碼', '飆股', '送給你禮物', '大漲', '看好', '怕什麼', '不用怕', '低點']):
+                                    stance = "🟢 強力看多 / 建議買進"
+                                    stance_color = "#10b981"
+                                elif any(k in context for k in ['不要再加碼', '頂多三成', '賣出', '避開', '危險', '減碼', '弱勢']):
+                                    stance = "🔴 減碼避開 / 逢高調節"
+                                    stance_color = "#ef4444"
+
+                        if quotes:
+                            # 取最精華的一至兩句
+                            best_quote = quotes[-1]["context"]
+                            best_time = quotes[-1]["time"]
+                            
+                            vid_items.append({
+                                "guru": "哲哲 (郭哲榮)",
+                                "symbol": symbol,
+                                "name": name,
+                                "video_title": vid_info["title"],
+                                "video_url": f"{vid_info['url']}&t={quotes[-1]['seconds']}s",
+                                "published_date": vid_info["published_date"],
+                                "time_tag": best_time,
+                                "stance": stance,
+                                "stance_color": stance_color,
+                                "quote": best_quote,
+                                "total_mentions": len(quotes)
+                            })
+
+        if vid_items:
+            data_cache.save_guru_analysis(vid, {
+                "guru": "哲哲 (郭哲榮)",
+                "video_title": vid_info["title"],
+                "published_date": vid_info["published_date"],
+                "items": vid_items
+            })
+            results.extend(vid_items)
 
     # 若抓不到逐字稿則安全 fallback 示範
     if not results and videos:
@@ -236,12 +291,56 @@ def get_oldwang_weekly_insights(max_days=7):
 
     for vid_info in videos[:4]:
         vid = vid_info["video_id"]
+        
+        # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
+        cached = data_cache.get_guru_analysis_from_cache(vid)
+        if cached and "items" in cached:
+            results.extend(cached["items"])
+            continue
+
+        vid_items = []
         desc = fetch_video_description(vid)
         
         if desc:
-            # 1. 抓取「今日我最熱」/「今日我最弱」
-            hot_match = re.search(r'今日我最熱[：:]\s*(\d{4})\s*([^\n\r]+)', desc)
-            weak_match = re.search(r'今日我最弱[：:]\s*(\d{4})\s*([^\n\r]+)', desc)
+            # 2. 若有設定 Gemini API Key，呼叫 Gemini 進行老王影音說明與重點深度提煉
+            gemini_res = gemini_engine.analyze_guru_content_with_gemini(
+                guru_name="王倚隆 (老王)",
+                video_title=vid_info["title"],
+                transcript_or_desc=desc
+            )
+            if gemini_res and gemini_res.get("mentioned_stocks"):
+                for stk in gemini_res["mentioned_stocks"]:
+                    sym = stk.get("symbol", "").strip()
+                    sname = stk.get("name", "").strip()
+                    if not sym and sname in POPULAR_STOCK_LOOKUP:
+                        sym = POPULAR_STOCK_LOOKUP[sname]
+                    if not sym:
+                        continue
+                    
+                    stc = stk.get("stance", "觀望")
+                    stc_color = "#10b981" if any(x in stc for x in ["多", "買", "熱", "好"]) else "#ef4444"
+                    
+                    vid_items.append({
+                        "guru": "老王 (王倚隆)",
+                        "symbol": sym,
+                        "name": sname or STOCK_NAME_MAP.get(sym, sym),
+                        "video_title": vid_info["title"],
+                        "video_url": vid_info["url"],
+                        "published_date": vid_info["published_date"],
+                        "time_tag": "AI深度精選",
+                        "stance": f"✨ Gemini解讀: {stc}",
+                        "stance_color": stc_color,
+                        "quote": stk.get("guru_quote", stk.get("action_trigger", "老王均線關鍵焦點標的")),
+                        "defense_price": stk.get("defense_price", "依老王20MA/大量低點防守"),
+                        "guru_summary": gemini_res.get("guru_summary", ""),
+                        "type": "gemini"
+                    })
+
+            # 若無 Gemini 解析結果，使用原有說明欄結構化解析
+            if not vid_items:
+                # 1. 抓取「今日我最熱」/「今日我最弱」
+                hot_match = re.search(r'今日我最熱[：:]\s*(\d{4})\s*([^\n\r]+)', desc)
+                weak_match = re.search(r'今日我最弱[：:]\s*(\d{4})\s*([^\n\r]+)', desc)
             
             if hot_match:
                 sym = hot_match.group(1).strip()
@@ -305,7 +404,7 @@ def get_oldwang_weekly_insights(max_days=7):
                                 quote_text = f"時間軸 [{time_label}] 深度剖析：{line.strip()}"
                                 break
 
-                    results.append({
+                    vid_items.append({
                         "guru": "老王 (王倚隆)",
                         "symbol": code,
                         "name": cname,
@@ -318,6 +417,15 @@ def get_oldwang_weekly_insights(max_days=7):
                         "quote": quote_text,
                         "type": "discussion"
                     })
+
+        if vid_items:
+            data_cache.save_guru_analysis(vid, {
+                "guru": "老王 (王倚隆)",
+                "video_title": vid_info["title"],
+                "published_date": vid_info["published_date"],
+                "items": vid_items
+            })
+            results.extend(vid_items)
 
     # 若抓不到則提供示範基準
     if not results:

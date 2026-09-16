@@ -1153,7 +1153,6 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
             else:
                 st.caption("暫無近期新聞快訊。")
 
-# ================= 頁面 2：熱門焦點與短線突破 (含大盤評分與RS) =================
 # ================= 模組 4：社群情報與名師風向 🤖[Gemini AI] =================
 elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
     st.markdown("""
@@ -1222,7 +1221,7 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#ef4444; font-size:0.9rem; margin-bottom:6px;">🎙️ 哲哲官方影音重點摘要</div>
-                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item['reason']}</div>
+                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
                             <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
                                 📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
                             </div>
@@ -1305,7 +1304,7 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
                         <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
                             <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">🎙️ 老王官方影音觀點</div>
-                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item['reason']}</div>
+                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
                             <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
                                 📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
                             </div>

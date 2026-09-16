@@ -43,7 +43,7 @@ def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc,
     }
   ]
 }"""
-        for m in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -89,7 +89,7 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
 
 請進行【散戶情緒溫度計與買賣篩選分析】，並回傳JSON格式：
 {
-  "overall_sentiment": "極度熱絡 / 追高恐慌 / 分歧震痪 / 逢低抄底 / 悲觀停�%8損",
+  "overall_sentiment": "極度熱絡 / 追高恐慌 / 分歧震盪 / 逢低抄底 / 悲觀停損",
   "crowd_psychology": "散戶當前心理狀態總結（約80字）",
   "market_regime_impact": "對短線大盤的警訊或契機",
   "hot_stocks_analysis": [
@@ -98,13 +98,13 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
       "symbol": "股票代號（4碼數字，無明確則留空）",
       "retail_sentiment": "一面倒看多 / 偏空唱衰 / 意見分歧",
       "sentiment_score": 80,
-      "ai_trading_advice": "可逢低承接 / 嚄禁追高 / 跌破停�%8損觀望 / 波段續抱",
+      "ai_trading_advice": "可逢低承接 / 嚴禁追高 / 跌破停損觀望 / 波段續抱",
       "key_reason": "分析原因（60字內）",
       "risk_level": "高 / 中 / 低"
     }
   ]
 }"""
-        for m in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -162,7 +162,7 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
   "risk_warning": "最大潛在風險警示（例如：短線乖離過大、主力出貨、大盤風向偏空）"
 }}
 """
-        for m in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -174,6 +174,14 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
                 )
                 if resp and resp.text:
                     parsed = json.loads(resp.text)
+                    from datetime import datetime, timezone, timedelta
+                    now_tw = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')
+                    parsed['analyzed_at'] = now_tw
+                    parsed['posture'] = parsed.get('verdict_signal', '波段關注')
+                    parsed['stop_loss_plan'] = parsed.get('stop_loss_point', str(tech_info.get('stop_loss', '')))
+                    parsed['target_plan'] = parsed.get('target_point', str(tech_info.get('target1', '')))
+                    parsed['score'] = 75 if any(x in parsed['posture'] for x in ['多', '買', '強']) else (45 if any(x in parsed['posture'] for x in ['空', '賣', '損']) else 60)
+                    parsed['catalyst'] = parsed.get('entry_condition', '短線量價型態確立')
                     data_cache.record_api_call(module_name=f"個股診斷 ({name})", model_name=m)
                     return parsed
             except Exception as em:

@@ -118,3 +118,39 @@ def record_cache_hit(module_name="Cache"):
             json.dump(stats, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"save cache hit error: {e}")
+
+# ================= 個股 AI 深度診斷當日快取 (避免重複查詢消耗) =================
+STOCK_AI_CACHE_FILE = os.path.join(DATA_DIR, 'stock_ai_cache.json')
+
+def load_stock_ai_cache() -> dict:
+    if not os.path.exists(STOCK_AI_CACHE_FILE):
+        return {}
+    try:
+        with open(STOCK_AI_CACHE_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def get_stock_ai_analysis_from_cache(symbol: str):
+    cache = load_stock_ai_cache()
+    today_str = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d')
+    item = cache.get(symbol)
+    if item and item.get("date") == today_str:
+        return item
+    return None
+
+def save_stock_ai_analysis(symbol: str, analysis_data: dict):
+    cache = load_stock_ai_cache()
+    today_str = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d')
+    now_str = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+    cache[symbol] = {
+        **analysis_data,
+        "date": today_str,
+        "cached_at": now_str
+    }
+    try:
+        with open(STOCK_AI_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"save stock ai cache error: {e}")
+

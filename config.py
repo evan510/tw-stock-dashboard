@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 APP_TITLE = "台股戰情室"
-APP_VERSION = "v4.5.0 Elite"
-APP_ICON = "📈"
+APP_VERSION = "v5.0.0 Short-Term Pro"
+APP_ICON = "⚡"
 
 MACRO_TICKERS = {
     '加權指數': '^TWII',

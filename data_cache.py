@@ -68,3 +68,53 @@ def is_forum_cache_valid(max_age_hours=3) -> bool:
         return (now_dt - cached_dt).total_seconds() < (max_age_hours * 3600)
     except Exception:
         return False
+
+# ================= Gemini API 用量與快取節省統計 =================
+USAGE_FILE = os.path.join(DATA_DIR, 'api_usage_stats.json')
+
+def load_api_usage_stats() -> dict:
+    today_str = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d')
+    default_stats = {
+        "date": today_str,
+        "today_calls": 0,
+        "total_calls": 0,
+        "cache_saved_calls": 0,
+        "last_call_time": "無",
+        "last_module": "無",
+        "last_model": "無"
+    }
+    if not os.path.exists(USAGE_FILE):
+        return default_stats
+    try:
+        with open(USAGE_FILE, 'r', encoding='utf-8') as f:
+            stats = json.load(f)
+            # 若跨日，重置今日呼叫計數
+            if stats.get("date") != today_str:
+                stats["date"] = today_str
+                stats["today_calls"] = 0
+            return stats
+    except Exception:
+        return default_stats
+
+def record_api_call(module_name="Gemini", model_name="gemini-2.5-flash"):
+    stats = load_api_usage_stats()
+    now_str = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+    stats["today_calls"] = stats.get("today_calls", 0) + 1
+    stats["total_calls"] = stats.get("total_calls", 0) + 1
+    stats["last_call_time"] = now_str
+    stats["last_module"] = module_name
+    stats["last_model"] = model_name
+    try:
+        with open(USAGE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"save usage error: {e}")
+
+def record_cache_hit(module_name="Cache"):
+    stats = load_api_usage_stats()
+    stats["cache_saved_calls"] = stats.get("cache_saved_calls", 0) + 1
+    try:
+        with open(USAGE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"save cache hit error: {e}")

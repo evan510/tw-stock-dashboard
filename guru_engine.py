@@ -136,6 +136,7 @@ def get_zhezhe_weekly_insights(max_days=7):
         # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
         cached = data_cache.get_guru_analysis_from_cache(vid)
         if cached and "items" in cached:
+            data_cache.record_cache_hit(module_name="哲哲影音快取")
             results.extend(cached["items"])
             continue
 
@@ -295,6 +296,7 @@ def get_oldwang_weekly_insights(max_days=7):
         # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
         cached = data_cache.get_guru_analysis_from_cache(vid)
         if cached and "items" in cached:
+            data_cache.record_cache_hit(module_name="老王影音快取")
             results.extend(cached["items"])
             continue
 

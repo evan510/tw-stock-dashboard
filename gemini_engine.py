@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
+import data_cache
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -53,7 +54,9 @@ def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc,
                     )
                 )
                 if resp and resp.text:
-                    return json.loads(resp.text)
+                    parsed = json.loads(resp.text)
+                    data_cache.record_api_call(module_name=f"名師前瞻 ({guru_name})", model_name=m)
+                    return parsed
             except Exception as em:
                 logger.warning(f'Model {m} failed: {em}')
                 continue
@@ -112,7 +115,9 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
                     )
                 )
                 if resp and resp.text:
-                    return json.loads(resp.text)
+                    parsed = json.loads(resp.text)
+                    data_cache.record_api_call(module_name="股市同學會輿情雷達", model_name=m)
+                    return parsed
             except Exception as em:
                 logger.warning(f'Forum model {m} failed: {em}')
                 continue

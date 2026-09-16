@@ -276,9 +276,9 @@ menu = st.sidebar.radio(
         "🚀 0. 短線題材與法人連買 (5~20% 狙擊槍)",
         "🩺 1. 個股診斷室 (AI 深度量化與燈號)",
         "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)",
-        "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)",
+        "🎙️ 3. 名師每週影音前瞻 🤖[Gemini AI]",
         "👑 4. 老王均線獨門戰法 (萬里無雲/買黑不買紅)",
-        "🔥 5. 股市同學會社群輿情雷達 (散戶多空溫度計)",
+        "🔥 5. 股市同學會社群輿情 🤖[Gemini AI]",
         "🎯 6. 投信鎖碼波段選股榜",
         "🌐 7. 盤後宏觀與法人籌碼",
         "📈 8. 互動 K 線與指標圖室",
@@ -290,18 +290,46 @@ menu = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 
-# Gemini API Key 檢測與快速配置
+# Gemini API Key 檢測與用量即時儀表板
 current_api_key = gemini_engine.get_api_key()
-with st.sidebar.expander("🤖 Google Gemini AI 核心設定", expanded=(not bool(current_api_key))):
+usage_stats = data_cache.load_api_usage_stats()
+today_calls = usage_stats.get("today_calls", 0)
+total_calls = usage_stats.get("total_calls", 0)
+saved_calls = usage_stats.get("cache_saved_calls", 0)
+last_call_t = usage_stats.get("last_call_time", "無")
+last_mod = usage_stats.get("last_module", "無")
+
+with st.sidebar.expander("🤖 Google Gemini AI 核心與用量", expanded=(not bool(current_api_key))):
     if current_api_key:
         st.success("🟢 Gemini API 已連線就緒")
     else:
         st.warning("🟡 未偵測到 Gemini API Key")
-    custom_key_input = st.text_input("輸入/自訂 Gemini API Key：", value=current_api_key, type="password", help="支援從 .env 自動載入，亦可在此手動覆蓋")
+    custom_key_input = st.text_input("Gemini API Key：", value=current_api_key, type="password", help="支援從 .env 自動載入，亦可在此手動輸入")
     if custom_key_input and custom_key_input != current_api_key:
         import os
         os.environ['GEMINI_API_KEY'] = custom_key_input.strip()
         st.success("API Key 已即時更新！")
+
+    st.markdown("##### 📊 本地 API 實時用量統計")
+    # 今日呼叫與進度條 (以免費額度 1500 RPD 為基準)
+    pct_used = min(1.0, today_calls / 1500.0)
+    st.progress(pct_used)
+    st.caption(f"今日呼叫：**{today_calls}** / 1,500 次免費額度 ({pct_used*100:.1f}%)")
+    
+    st.markdown(f"""
+    <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:8px 10px; font-size:0.82rem; color:#cbd5e1; line-height:1.6; margin-top:6px;">
+        <div>⚡ <b>快取成功省下：</b><span style="color:#4ade80; font-weight:700;">{saved_calls} 次</span> (0 Token消耗)</div>
+        <div>📈 <b>累計總呼叫數：</b>{total_calls} 次</div>
+        <div>⏱️ <b>最後呼叫：</b>{last_call_t.split()[-1] if ' ' in last_call_t else last_call_t} ({last_mod})</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.link_button(
+        "🌐 前往 Google AI Studio 官方用量後台",
+        url="https://aistudio.google.com/app/plan_and_billing",
+        use_container_width=True
+    )
 
 if st.sidebar.button("🔄 同步刷新數據", use_container_width=True):
     st.cache_data.clear()
@@ -958,10 +986,16 @@ elif menu == "🔥 2. 熱門焦點與短線突破 (含大盤評分與RS)":
         ])
         st.dataframe(df_c, use_container_width=True)
 
-# ================= 頁面 3：名師每週影音前瞻 (老王/哲哲 AI雙軌共振) =================
-elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)":
-    st.title("🎙️ 名師每週影音前瞻與 AI 雙軌共振室")
-    st.caption("即時爬取 YouTube 官方最新 7 天盤後影音與逐字講評，名師觀點與 AI 數據客觀分開，提供最公正的共振決策！")
+# ================= 頁面 3：名師每週影音前瞻 🤖[Gemini AI] =================
+elif menu == "🎙️ 3. 名師每週影音前瞻 🤖[Gemini AI]":
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+        <h1 style="margin:0; padding:0; display:inline-block;">🎙️ 名師每週影音前瞻與 AI 雙軌共振室</h1>
+        <span class="pill pill-blue" style="font-size:0.85rem; padding:4px 10px;">🤖 Google Gemini API 深度賦能</span>
+        <span class="pill pill-buy" style="font-size:0.85rem; padding:4px 10px;">⚡ 本地 JSON 智慧快取保護 (0 Token浪費)</span>
+    </div>
+    """, unsafe_allow_html=True)
+    st.caption("即時爬取 YouTube 官方最新 7 天盤後影音與逐字講評，由 Google Gemini AI 深入提煉名師核心論點與防守價，與量化客觀指標雙軌互證！")
     
     guru_tab_zhezhe, guru_tab_oldwang = st.tabs([
         "🔥 哲哲 (郭哲榮) 最新 7 天影音深度解構",
@@ -1235,9 +1269,15 @@ elif menu == "👑 4. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":
                 else:
                     st.success(ow_res['exit_alert'])
 
-# ================= 頁面 5：股市同學會社群輿情雷達 (散戶多空溫度計) =================
-elif menu == "🔥 5. 股市同學會社群輿情雷達 (散戶多空溫度計)":
-    st.title("🔥 股市同學會 (CMoney) 社群輿情與散戶雷達")
+# ================= 頁面 5：股市同學會社群輿情 🤖[Gemini AI] =================
+elif menu == "🔥 5. 股市同學會社群輿情 🤖[Gemini AI]":
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+        <h1 style="margin:0; padding:0; display:inline-block;">🔥 股市同學會 (CMoney) 社群輿情與散戶雷達</h1>
+        <span class="pill pill-blue" style="font-size:0.85rem; padding:4px 10px;">🤖 Google Gemini API 深度賦能</span>
+        <span class="pill pill-gold" style="font-size:0.85rem; padding:4px 10px;">⚡ 3小時 TTL 智慧快取保護</span>
+    </div>
+    """, unsafe_allow_html=True)
     st.caption("採集台灣最大散戶社群近 5 天熱門發文與焦點標的，由 Google Gemini AI 深度剖析散戶心理、多空狂熱度與潛在買賣風險！")
 
     cm_tab_radar, cm_tab_raw = st.tabs([

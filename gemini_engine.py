@@ -82,28 +82,31 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
             summaries.append(f'【標的：{stks}】：{txt}')
         context_text = '\n---\n'.join(summaries)
 
-        prompt = f"""你是專精台股籌碼與散戶心理學的操盤分析師。
-以下是台灣股市同學會（CMoney）的熱門發文：
+        prompt = f"""你是專精台股「數天至數月波段操盤（Swing Trading / Trend Following）」與主力散戶博弈的資深投資長。
+以下是台灣股市同學會（CMoney）最新熱門社群發文：
 
 {context_text}
 
-請進行【散戶情緒溫度計與買賣篩選分析】，並回傳JSON格式：
-{
-  "overall_sentiment": "極度熱絡 / 追高恐慌 / 分歧震盪 / 逢低抄底 / 悲觀停損",
-  "crowd_psychology": "散戶當前心理狀態總結（約80字）",
-  "market_regime_impact": "對短線大盤的警訊或契機",
+短線操盤手核心痛點：最怕在「末升段」跟著散戶狂熱買在最高點被套牢數月；最渴望在「回測月線洗盤結束、散戶罵聲連連」時跟隨主力逢低低吸波段買點。
+請嚴格過濾排除純存股ETF（如 0050, 0056, 00878 等），專注於具備波動度與產業題材的個股，進行【散戶情緒 vs 主力籌碼波段照妖鏡分析】，回傳 JSON 格式：
+{{
+  "overall_sentiment": "散戶狂熱誘多警戒 / 恐慌割肉主力洗盤 / 分歧震盪換手 / 主升段健康推進",
+  "crowd_psychology": "散戶真實心理狀態與籌碼沈澱剖析（直指題材與族群，80字內）",
+  "market_regime_impact": "對數天至數月波段操作者的進退指引（嚴禁心靈雞湯）",
   "hot_stocks_analysis": [
-    {
+    {{
       "stock_name": "股票名稱",
-      "symbol": "股票代號（4碼數字，無明確則留空）",
-      "retail_sentiment": "一面倒看多 / 偏空唱衰 / 意見分歧",
-      "sentiment_score": 80,
-      "ai_trading_advice": "可逢低承接 / 嚴禁追高 / 跌破停損觀望 / 波段續抱",
-      "key_reason": "分析原因（60字內）",
+      "symbol": "4碼股票代號（若為ETF則直接排除不收錄）",
+      "retail_sentiment": "極端狂熱追價 / 恐慌停損停利 / 猶豫分歧 / 抱牢看好",
+      "sentiment_score": 85,
+      "swing_stage": "初升段(主力吸籌) / 主升段(軌道推進) / 末升段狂熱(誘多出貨) / 回測洗盤(測20MA支撐) / 破線修正段",
+      "contrarian_verdict": "🔴 散戶接刀警戒(主力出貨) / 🟢 主力洗盤吃貨(波段安全買點) / 🔵 主力散戶共振(順勢抱波段) / ⚪ 破線觀望不接刀",
+      "defense_support": "關鍵波段防守點（如 10MA、20MA月線或大量低點）",
+      "swing_strategy": "數天至數月持股作戰指南：加碼時機、波段續抱條件、跌破撤退停損點（80字內明確執行規格）",
       "risk_level": "高 / 中 / 低"
-    }
+    }}
   ]
-}"""
+}}"""
         for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
             try:
                 resp = client.models.generate_content(

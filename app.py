@@ -1466,84 +1466,159 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
         <div class="rwd-card" style="border-left: 6px solid #38bdf8; margin-bottom: 16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <div>
-                    <h3 style="margin:0; font-size:1.25rem;">📊 散戶群眾情緒總體溫：<b>{cached_forum_data.get('overall_sentiment', '中性')}</b></h3>
-                    <span style="font-size:0.85rem; color:#94a3b8;">📅 快取時間：{cached_forum_data.get('cached_at', '剛才')} (3 小時內走本機 JSON 快取，0 Token 浪費)</span>
+                    <h3 style="margin:0; font-size:1.25rem;">📊 散戶情緒 vs 主力籌碼波段總體溫：<b>{cached_forum_data.get('overall_sentiment', '中性')}</b></h3>
+                    <span style="font-size:0.85rem; color:#94a3b8;">📅 快取時間：{cached_forum_data.get('cached_at', '剛才')} (專注數天至數月波段操作，排除純存股ETF)</span>
                 </div>
                 <div>
-                    <span class="pill pill-blue">🧠 Gemini 深度語意模型</span>
-                    <span class="pill pill-gold">🎯 散戶反向指標</span>
+                    <span class="pill pill-blue">🧠 波段多空照妖鏡</span>
+                    <span class="pill pill-gold">🎯 主力洗盤 vs 散戶接刀</span>
                 </div>
             </div>
             <div style="margin-top:12px; background:rgba(15,23,42,0.6); padding:12px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                <div style="color:#38bdf8; font-weight:700; font-size:0.9rem; margin-bottom:4px;">👥 散戶群眾心理學剖析：</div>
+                <div style="color:#38bdf8; font-weight:700; font-size:0.9rem; margin-bottom:4px;">👥 散戶籌碼心理與集中度剖析：</div>
                 <p style="margin:0; font-size:0.9rem; line-height:1.6; color:#e2e8f0;">
                     {cached_forum_data.get('crowd_psychology', '')}
                 </p>
                 <div style="margin-top:8px; font-size:0.86rem; color:#cbd5e1;">
-                    ⚡ <b>對大盤短線影響：</b>{cached_forum_data.get('market_regime_impact', '')}
+                    ⚡ <b>數天至數月波段進退指引：</b>{cached_forum_data.get('market_regime_impact', '')}
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        st.subheader("🎯 散戶近 5 天熱門關注標的 ＆ Gemini 買賣篩選建議")
         hot_list = cached_forum_data.get("hot_stocks_analysis", [])
         
-        if hot_list:
-            for item in hot_list:
+        # 篩選過濾純ETF標的，確保專注動能個股
+        valid_hot_list = [x for x in hot_list if not forum_engine.is_etf_or_index(x.get("symbol", ""))]
+        if not valid_hot_list:
+            valid_hot_list = hot_list
+
+        col_title, col_filter = st.columns([3, 2])
+        with col_title:
+            st.subheader("🎯 散戶 vs 主力籌碼照妖鏡（數天至數月波段雷達）")
+        with col_filter:
+            filter_mode = st.selectbox(
+                "🔍 波段信號快篩",
+                ["全部熱門標的", "🟢 主力洗盤/低吸買點", "🔴 散戶接刀/出貨警戒", "🔵 主力散戶共振/順風車"],
+                key="filter_forum_contrarian"
+            )
+        
+        # 依篩選條件過濾
+        filtered_display_list = []
+        for item in valid_hot_list:
+            verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", ""))
+            if "🟢" in filter_mode and "🟢" not in verdict:
+                continue
+            if "🔴" in filter_mode and ("🔴" not in verdict and "⚠️" not in verdict):
+                continue
+            if "🔵" in filter_mode and "🔵" not in verdict:
+                continue
+            filtered_display_list.append(item)
+
+        if filtered_display_list:
+            for item in filtered_display_list:
                 s_name = item.get("stock_name", "")
                 s_code = item.get("symbol", "").strip()
-                advice = item.get("ai_trading_advice", "觀望")
                 retail_stc = item.get("retail_sentiment", "中性")
-                reason = item.get("key_reason", "")
-                risk = item.get("risk_level", "中")
                 score = item.get("sentiment_score", 50)
+                stage = item.get("swing_stage", "波段觀察段")
+                verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", "觀望"))
+                defense = item.get("defense_support", item.get("key_reason", "依波段月線紀律防守"))
+                strategy = item.get("swing_strategy", item.get("key_reason", ""))
+                risk = item.get("risk_level", "中")
                 
-                adv_color = "#10b981" if any(k in advice for k in ["買", "接", "抱", "多"]) else "#ef4444"
-                
+                # 燈號顏色邏輯
+                if "🟢" in verdict or any(k in verdict for k in ["低吸", "買點", "蓄勢"]):
+                    card_border = "#10b981"
+                    badge_bg = "rgba(16,185,129,0.15)"
+                    badge_color = "#34d399"
+                elif "🔴" in verdict or "⚠️" in verdict or any(k in verdict for k in ["接刀", "出貨", "警戒", "過熱"]):
+                    card_border = "#ef4444"
+                    badge_bg = "rgba(239,68,68,0.15)"
+                    badge_color = "#f87171"
+                elif "🔵" in verdict or any(k in verdict for k in ["共振", "順風車", "順勢"]):
+                    card_border = "#3b82f6"
+                    badge_bg = "rgba(59,130,246,0.15)"
+                    badge_color = "#60a5fa"
+                else:
+                    card_border = "#f59e0b"
+                    badge_bg = "rgba(245,158,11,0.15)"
+                    badge_color = "#fbbf24"
+
                 card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {adv_color}; margin-bottom: 14px;">
+                <div class="rwd-card" style="border-left: 6px solid {card_border}; margin-bottom: 16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                         <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.2rem;">
-                                {s_name} <span style="color:#94a3b8; font-size:0.95rem;">({s_code if s_code else '社群熱門'})</span>
+                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                {s_name} <span style="color:#94a3b8; font-size:0.95rem;">({s_code if s_code else '題材股'})</span>
                             </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">散戶熱度 {score} 分</span>
-                            <span class="pill" style="background:rgba(239,68,68,0.15); color:#f87171;">散戶情緒：{retail_stc}</span>
+                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">
+                                📍 波段位階：<b>{stage}</b>
+                            </span>
+                            <span class="pill" style="background:rgba(255,255,255,0.05); color:#94a3b8;">
+                                散戶熱度：<b>{score} 分</b> ({retail_stc})
+                            </span>
                         </div>
                         <div>
-                            <span class="pill" style="background:{adv_color}22; color:{adv_color}; border:1px solid {adv_color}55; font-size:0.9rem; font-weight:700;">
-                                💡 建議：{advice}
+                            <span class="pill" style="background:{badge_bg}; color:{badge_color}; border:1px solid {badge_color}55; font-size:0.9rem; font-weight:700;">
+                                {verdict}
                             </span>
                             <span class="pill pill-warn">風險等級：{risk}</span>
                         </div>
                     </div>
-                    <div style="margin-top:10px; background:rgba(15,23,42,0.6); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); font-size:0.88rem; color:#cbd5e1; line-height:1.6;">
-                        <b>🔍 Gemini 綜合診斷原因：</b>{reason}
+                    
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#38bdf8; font-size:0.88rem; margin-bottom:6px;">
+                                🛡️ 關鍵波段生命線防守
+                            </div>
+                            <div style="font-size:0.95rem; font-weight:700; color:#f8fafc;">
+                                {defense}
+                            </div>
+                            <div style="margin-top:6px; font-size:0.8rem; color:#94a3b8;">
+                                💡 數天至數月波段原則：未跌破防守均線前抱牢放大利潤，跌破三日內不站回嚴守停損。
+                            </div>
+                        </div>
+                        
+                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-weight:700; color:#fbbf24; font-size:0.88rem; margin-bottom:6px;">
+                                🎯 波段操盤執行指南 (加碼 / 續抱 / 停損)
+                            </div>
+                            <div style="font-size:0.88rem; color:#cbd5e1; line-height:1.5;">
+                                {strategy}
+                            </div>
+                        </div>
                     </div>
                 </div>
                 """).strip()
                 st.markdown(card_html, unsafe_allow_html=True)
                 
                 if s_code:
-                    if st.button(f"🩺 帶入「個股 AI 深度診斷室」查看 {s_name} ({s_code}) 技術籌碼與 Gemini 覆盤", key=f"diag_forum_{s_code}"):
-                        st.session_state.diag_stock_query = s_code
-                        st.info(f"已選擇 {s_name} ({s_code})，請切換至【🩺 3. 個股 AI 深度診斷室】深入檢查！")
+                    col_btn1, col_btn2 = st.columns([3, 1])
+                    with col_btn1:
+                        if st.button(f"🩺 帶入「個股 AI 深度診斷室」查看 {s_name} ({s_code}) 技術籌碼與 Gemini 覆盤", key=f"diag_forum_{s_code}"):
+                            st.session_state.diag_stock_query = s_code
+                            st.info(f"已選擇 {s_name} ({s_code})，請切換至【🩺 3. 個股 AI 深度診斷室】深入檢查！")
+        else:
+            st.info("目前條件下無符合之標的，請切換快篩條件。")
 
     with guru_tab4:
-        st.subheader("📋 股市同學會當前即時熱門個股排行 (前 15 名)")
-        ranking_syms = cached_forum_data.get("ranking_symbols", [])
+        st.subheader("📋 股市同學會當前即時熱門動能個股排行 (已過濾純存股ETF)")
+        ranking_syms = [s for s in cached_forum_data.get("ranking_symbols", []) if not forum_engine.is_etf_or_index(s)]
         if ranking_syms:
-            st.write("、".join([f"`{s}`" for s in ranking_syms]))
+            st.markdown(" ".join([f"<span class='pill pill-blue' style='font-size:0.95rem; margin:4px;'>📌 {STOCK_NAME_MAP.get(s, s)} ({s})</span>" for s in ranking_syms]), unsafe_allow_html=True)
+        else:
+            st.info("目前尚無符合之動能個股排行。")
         
         st.markdown("---")
-        st.subheader("💬 近 5 天同學會社群熱門討論摘要節錄")
+        st.subheader("💬 近期同學會社群熱門討論摘要節錄")
         raw_samples = cached_forum_data.get("topics_sample", [])
         for t_item in raw_samples:
+            st_tags = [t for t in t_item.get('stocks', []) if not forum_engine.is_etf_or_index(t)]
             st.markdown(f"""
             <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px 14px; margin-bottom:10px; border-left:3px solid #60a5fa;">
                 <div style="font-weight:700; color:#60a5fa; font-size:0.85rem; margin-bottom:4px;">
-                    📌 討論標的：{', '.join(t_item.get('stocks', [])) or '大盤綜合話題'}
+                    📌 討論標的：{', '.join(st_tags) or '熱門產業題材'}
                 </div>
                 <div style="font-size:0.86rem; color:#cbd5e1; line-height:1.5;">
                     {t_item.get('text', '')}

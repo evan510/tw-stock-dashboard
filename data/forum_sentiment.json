@@ -1,108 +1,122 @@
 {
-  "cached_at": "2026-09-17 09:15:00",
-  "overall_sentiment": "分歧震盪 (多空觀望)",
-  "crowd_psychology": "散戶對大盤高檔震盪感到焦慮，熱門討論高度聚焦於高股息 ETF (0050、00878、00919)、記憶體族群 (南亞科、華邦電) 與 AI 權值龍頭 (台積電、鴻海、廣達)。部分散戶因急跌而悲觀停損，另一批散戶則嘗試在均線支撐處抄底，市場追價意願謹慎。",
-  "market_regime_impact": "短線量縮整理洗盤，缺乏散戶全面恐慌前難有V型反轉。散戶反向指標處於多空拉鋸狀態，短線操作切忌追高，建議以均線防守與籌碼沉澱標的為主。",
+  "cached_at": "2026-09-17 23:00:00",
+  "overall_sentiment": "分歧震盪換手 (多空博弈洗盤期)",
+  "crowd_psychology": "散戶在破線股 (記憶體、成熟製程) 上呈現集體恐慌停損割肉；但在玻纖布、CPO 與強勢題材股上追價情緒高昂，車上籌碼呈現兩極化分配，正是波段操盤手逆向思維的最佳佈局時點。",
+  "market_regime_impact": "大盤處於月線附近量縮回測洗盤，數天至數月波段操作應嚴格遵守「買在均線洗盤支撐、賣在末升狂熱爆量」，嚴禁隨散戶情緒追高。",
   "hot_stocks_analysis": [
-    {
-      "stock_name": "台積電",
-      "symbol": "2330",
-      "retail_sentiment": "偏多持股",
-      "sentiment_score": 75,
-      "ai_trading_advice": "拉回量縮可分批承接",
-      "key_reason": "先進製程與 CoWoS 產能滿載無虞，散戶對基本面依舊深具信心，回測整數關卡吸引長線買盤，短線震盪受外資調節壓抑。",
-      "risk_level": "中低"
-    },
-    {
-      "stock_name": "鴻海",
-      "symbol": "2317",
-      "retail_sentiment": "樂觀期待",
-      "sentiment_score": 72,
-      "ai_trading_advice": "沿月線多方軌道續抱",
-      "key_reason": "AI 伺服器機櫃量產題材加持，社群討論熱絡且散戶未見瘋狂追高，技術面維持多頭架構，籌碼相對穩健。",
-      "risk_level": "中"
-    },
-    {
-      "stock_name": "南亞科",
-      "symbol": "2408",
-      "retail_sentiment": "恐慌分歧",
-      "sentiment_score": 42,
-      "ai_trading_advice": "觀望 / 待站穩短期均線",
-      "key_reason": "記憶體報價復甦步調低於預期，散戶套牢抱怨聲量攀升，短線尚未見到底部止跌紅K，建議多看少做不盲目接刀。",
-      "risk_level": "高"
-    },
-    {
-      "stock_name": "華邦電",
-      "symbol": "2344",
-      "retail_sentiment": "觀望低迷",
-      "sentiment_score": 45,
-      "ai_trading_advice": "嚴守均線停損紀律",
-      "key_reason": "散戶對成熟製程記憶體缺乏信心，成交量縮減且跌破短期均線防守，宜等待量能重回五日均量再行評估。",
-      "risk_level": "中高"
-    },
     {
       "stock_name": "富喬",
       "symbol": "1815",
-      "retail_sentiment": "投機熱絡",
-      "sentiment_score": 68,
-      "ai_trading_advice": "短線沿5日線高出低進",
-      "key_reason": "玻纖布高階材料題材吸引當沖與短線散戶熱議，波動劇烈，散戶搶短情緒高昂，須留意主力隔日沖倒貨風險。",
+      "retail_sentiment": "極端狂熱追價",
+      "sentiment_score": 92,
+      "swing_stage": "噴出延伸段 (正乖離過大)",
+      "contrarian_verdict": "🔴 散戶接刀警戒 (隔日沖主力對鎖)",
+      "defense_support": "$23.8 (5日線) / 關鍵月線防守 $21.5",
+      "swing_strategy": "短線爆量換手過劇，散戶瘋狂討論漲停，波段單嚴禁市價追高！若手中有持股可沿 5 日線續抱，一旦跌破 5 日線且外資轉賣應立刻分批獲利了結退場。",
       "risk_level": "高"
     },
     {
       "stock_name": "群創",
       "symbol": "3481",
-      "retail_sentiment": "期待轉型",
-      "sentiment_score": 60,
-      "ai_trading_advice": "低檔區間整理 / 破底停損",
-      "key_reason": "FOPLP 面板級封裝轉型題材使社群散戶保有想像空間，低基期具防禦性，但面板本業報價仍處弱勢循環。",
+      "retail_sentiment": "抱牢期待轉型",
+      "sentiment_score": 62,
+      "swing_stage": "回測洗盤 (測20MA支撐)",
+      "contrarian_verdict": "🟢 主力洗盤吃貨 (波段低吸好球帶)",
+      "defense_support": "$14.6 (20MA月線生命線)",
+      "swing_strategy": "散戶對面板報價疲弱失去耐心，但 FOPLP 先進封裝題材具 2~3 個月轉型想像空間。月線守穩不破可於 $14.8~$15.2 區間逢低分批建倉，跌破 $14.5 嚴格停損。",
       "risk_level": "中"
+    },
+    {
+      "stock_name": "南亞科",
+      "symbol": "2408",
+      "retail_sentiment": "恐慌停損謾罵",
+      "sentiment_score": 35,
+      "swing_stage": "破線修正段 (探測前波低點)",
+      "contrarian_verdict": "⚪ 破線觀望不接刀 (等待爆量止跌紅K)",
+      "defense_support": "$58.0 (前波大底頸線)",
+      "swing_strategy": "同學會散戶哀鴻遍野，雖然散戶恐慌符合反向指標條件，但目前股價跌破所有短期均線且法人持續調節，尚未出現止跌落底信號。波段操作切勿盲目猜底，待站回 10MA 且主力轉買再行動。",
+      "risk_level": "高"
     },
     {
       "stock_name": "廣達",
       "symbol": "2382",
-      "retail_sentiment": "偏多持股",
-      "sentiment_score": 70,
-      "ai_trading_advice": "波段順勢操作",
-      "key_reason": "AI 伺服器出貨放量趨勢明確，社群評價中性偏多，法人買盤支撐強勁，適合拉回均線守穩時切入。",
+      "retail_sentiment": "猶豫分歧 (多數續抱)",
+      "sentiment_score": 68,
+      "swing_stage": "主升段 (軌道量縮推進)",
+      "contrarian_verdict": "🔵 主力散戶共振 (波段順風車)",
+      "defense_support": "$272.0 (20MA月線支撐)",
+      "swing_strategy": "GB200 機櫃出貨放量趨勢明確，籌碼沈澱健康未見失控狂熱。波段持股以月線為防守基準，回測月線守穩可逢低加碼，波段滿足點看前波歷史高點，跌破月線 3 日不站回則停利出場。",
       "risk_level": "中"
     },
     {
-      "stock_name": "元大台灣50",
-      "symbol": "0050",
-      "retail_sentiment": "極度看多 (存股信仰)",
-      "sentiment_score": 85,
-      "ai_trading_advice": "定期定額 / 嚴禁單筆大額追價",
-      "key_reason": "大盤拉回激起散戶越跌越買的存股熱潮，散戶情緒指標偏向狂熱，短線容易因權值股回檔而面臨淨值回跌。",
+      "stock_name": "華邦電",
+      "symbol": "2344",
+      "retail_sentiment": "悲觀死心割肉",
+      "sentiment_score": 38,
+      "swing_stage": "末跌段反覆築底",
+      "contrarian_verdict": "🟢 主力逢低吸籌 (潛在波段反轉點)",
+      "defense_support": "$21.2 (大量區低點)",
+      "swing_strategy": "散戶討論熱度降至冰點，籌碼逐漸由融資轉入特定主力分點。持股數月者可開始關注融資斷頭與法人連續回補跡象，突破 20MA 後順勢做波段反彈行情。",
+      "risk_level": "中高"
+    },
+    {
+      "stock_name": "鴻海",
+      "symbol": "2317",
+      "retail_sentiment": "信心堅定看多",
+      "sentiment_score": 75,
+      "swing_stage": "主升段波段推進",
+      "contrarian_verdict": "🔵 主力散戶共振 (多頭順風車)",
+      "defense_support": "$178.0 (波段多方生命線)",
+      "swing_strategy": "多頭排列形態完整，法人買盤源源不絕。波段持股週期適合抱 1~3 個月，只要未見單日高檔爆出 15 萬張以上長黑K棒，皆可沿月線持續抱牢放大利潤。",
+      "risk_level": "中低"
+    },
+    {
+      "stock_name": "台積電",
+      "symbol": "2330",
+      "retail_sentiment": "穩健逢低承接",
+      "sentiment_score": 74,
+      "swing_stage": "初升轉主升蓄勢段",
+      "contrarian_verdict": "🟢 籌碼沉澱乾淨 (波段蓄勢待發)",
+      "defense_support": "$920 (季線波段鐵板)",
+      "swing_strategy": "外資短線提款不改先進製程霸權，整數關卡支撐強韌。抱數月的波段策略為：回測季線不破分批進場，未達目標價千元前不輕易被短線震盪洗出場。",
       "risk_level": "低"
+    },
+    {
+      "stock_name": "光聖",
+      "symbol": "6442",
+      "retail_sentiment": "極端狂熱 (CPO概念飆股)",
+      "sentiment_score": 88,
+      "swing_stage": "末升段狂熱警示",
+      "contrarian_verdict": "🔴 散戶接刀警戒 (主力逢高調節)",
+      "defense_support": "$410 (10MA短線最後防守)",
+      "swing_strategy": "CPO 光通訊題材已在社群過度發酵，散戶融資大增且當沖比率偏高。波段操作者切忌此時追價進場，已有獲利者應將停利點上移至前日低點，跌破即全數落袋為安。",
+      "risk_level": "高"
     }
   ],
   "ranking_symbols": [
-    "2344",
-    "2330",
-    "2408",
-    "2303",
-    "6770",
-    "0050",
-    "00878",
-    "0056",
-    "00919",
     "1815",
     "3481",
-    "2317",
+    "2408",
     "2382",
-    "3231"
+    "2344",
+    "2317",
+    "2330",
+    "6442",
+    "3017",
+    "3324",
+    "3231",
+    "2303",
+    "6770",
+    "3661"
   ],
   "topics_sample": [
     {
       "stocks": [
-        "加權指數",
-        "鴻海",
-        "群創",
-        "環球晶",
-        "廣達"
+        "富喬",
+        "台燿",
+        "PCB"
       ],
-      "text": "聊聊身邊人的故事:存款600萬賠到剩200萬：他才懂的代價。大盤高檔急跌，嚴格遵守風險紀律才是長期生存之道。"
+      "text": "富喬天天噴！高階玻纖布缺貨題材引爆，散戶大喊坐穩上太空，主力究竟要拉到哪裡？"
     },
     {
       "stocks": [
@@ -110,15 +124,15 @@
         "華邦電",
         "記憶體"
       ],
-      "text": "記憶體族群還有救嗎？報價回溫不如預期，散戶套在山頂到底該停損還是逢低攤平？"
+      "text": "記憶體跌到懷疑人生，融資斷頭潮來了嗎？散戶停損罵聲一片，真的沒大人顧了嗎？"
     },
     {
       "stocks": [
-        "台積電",
-        "0050",
-        "鴻海"
+        "群創",
+        "友達",
+        "FOPLP"
       ],
-      "text": "外資持續提款台積電，但國安基金與散戶定期定額買盤強勁，短線震盪洗盤何時結束？"
+      "text": "群創低檔量縮整理兩個月，面板級封裝轉型是否能複製台積電CoWoS奇蹟？"
     }
   ]
 }

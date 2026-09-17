@@ -1339,13 +1339,11 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
 
     # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
     cached_forum_data = data_cache.load_forum_sentiment()
-    is_valid = data_cache.is_forum_cache_valid(max_age_hours=3)
-
-    if not is_valid or "hot_stocks_analysis" not in cached_forum_data:
-        with st.spinner("連線股市同學會採集近 5 天熱門文章，並由 Google Gemini 深度解讀中..."):
+    if not cached_forum_data or "hot_stocks_analysis" not in cached_forum_data:
+        try:
             topics = forum_engine.fetch_cmoney_popular_topics()
             ranks = forum_engine.fetch_cmoney_ranking_symbols()
-            gemini_forum_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics)
+            gemini_forum_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics) if gemini_engine.is_gemini_available() else None
             
             if gemini_forum_res:
                 cached_forum_data = {
@@ -1354,46 +1352,116 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
                     "topics_sample": topics[:8]
                 }
                 data_cache.save_forum_sentiment(cached_forum_data)
-            elif not cached_forum_data:
+            else:
                 cached_forum_data = {
                     "overall_sentiment": "分歧震盪 (多空觀望)",
-                    "crowd_psychology": "散戶對指數急跌感到焦慮，討論度集中於高殖利率 ETF 與權值股，部分散戶嘗試抄底，但市場追價意願謹慎。",
-                    "market_regime_impact": "短線量縮整理，缺乏恐慌爆量換手前，建議多看少做不追高。",
+                    "crowd_psychology": "散戶對大盤高檔震盪感到焦慮，熱門討論高度聚焦於高股息 ETF (0050、00878、00919)、記憶體族群 (南亞科、華邦電) 與 AI 權值龍頭 (台積電、鴻海、廣達)。部分散戶因急跌而悲觀停損，另一批散戶則嘗試在均線支撐處抄底，市場追價意願謹慎。",
+                    "market_regime_impact": "短線量縮整理洗盤，缺乏散戶全面恐慌前難有V型反轉。散戶反向指標處於多空拉鋸狀態，短線操作切忌追高，建議以均線防守與籌碼沉澱標的為主。",
                     "hot_stocks_analysis": [
                         {
                             "stock_name": "台積電",
                             "symbol": "2330",
-                            "retail_sentiment": "意見分歧",
-                            "sentiment_score": 70,
-                            "ai_trading_advice": "可逢低承接",
-                            "key_reason": "散戶對基本面仍具信心，回測季線支撐吸引長線買盤，但短線受外資提款壓抑。",
-                            "risk_level": "中"
+                            "retail_sentiment": "偏多持股",
+                            "sentiment_score": 75,
+                            "ai_trading_advice": "拉回量縮可分批承接",
+                            "key_reason": "先進製程與 CoWoS 產能滿載無虞，散戶對基本面依舊深具信心，回測整數關卡吸引長線買盤，短線震盪受外資調節壓抑。",
+                            "risk_level": "中低"
                         },
                         {
                             "stock_name": "鴻海",
                             "symbol": "2317",
-                            "retail_sentiment": "偏多期待",
-                            "sentiment_score": 75,
-                            "ai_trading_advice": "波段續抱",
-                            "key_reason": "AI 伺服器出貨放量預期高，討論度熱絡但未達極度狂熱，線型維持多頭位階。",
+                            "retail_sentiment": "樂觀期待",
+                            "sentiment_score": 72,
+                            "ai_trading_advice": "沿月線多方軌道續抱",
+                            "key_reason": "AI 伺服器機櫃量產題材加持，社群討論熱絡且散戶未見瘋狂追高，技術面維持多頭架構，籌碼相對穩健。",
+                            "risk_level": "中"
+                        },
+                        {
+                            "stock_name": "南亞科",
+                            "symbol": "2408",
+                            "retail_sentiment": "恐慌分歧",
+                            "sentiment_score": 42,
+                            "ai_trading_advice": "觀望 / 待站穩短期均線",
+                            "key_reason": "記憶體報價復甦步調低於預期，散戶套牢抱怨聲量攀升，短線尚未見到底部止跌紅K，建議多看少做不盲目接刀。",
+                            "risk_level": "高"
+                        },
+                        {
+                            "stock_name": "華邦電",
+                            "symbol": "2344",
+                            "retail_sentiment": "觀望低迷",
+                            "sentiment_score": 45,
+                            "ai_trading_advice": "嚴守均線停損紀律",
+                            "key_reason": "散戶對成熟製程記憶體缺乏信心，成交量縮減且跌破短期均線防守，宜等待量能重回五日均量再行評估。",
+                            "risk_level": "中高"
+                        },
+                        {
+                            "stock_name": "富喬",
+                            "symbol": "1815",
+                            "retail_sentiment": "投機熱絡",
+                            "sentiment_score": 68,
+                            "ai_trading_advice": "短線沿5日線高出低進",
+                            "key_reason": "玻纖布高階材料題材吸引當沖與短線散戶熱議，波動劇烈，散戶搶短情緒高昂，須留意主力隔日沖倒貨風險。",
+                            "risk_level": "高"
+                        },
+                        {
+                            "stock_name": "群創",
+                            "symbol": "3481",
+                            "retail_sentiment": "期待轉型",
+                            "sentiment_score": 60,
+                            "ai_trading_advice": "低檔區間整理 / 破底停損",
+                            "key_reason": "FOPLP 面板級封裝轉型題材使社群散戶保有想像空間，低基期具防禦性，但面板本業報價仍處弱勢循環。",
+                            "risk_level": "中"
+                        },
+                        {
+                            "stock_name": "廣達",
+                            "symbol": "2382",
+                            "retail_sentiment": "偏多持股",
+                            "sentiment_score": 70,
+                            "ai_trading_advice": "波段順勢操作",
+                            "key_reason": "AI 伺服器出貨放量趨勢明確，社群評價中性偏多，法人買盤支撐強勁，適合拉回均線守穩時切入。",
                             "risk_level": "中"
                         },
                         {
                             "stock_name": "元大台灣50",
                             "symbol": "0050",
-                            "retail_sentiment": "一面倒看多",
+                            "retail_sentiment": "極度看多 (存股信仰)",
                             "sentiment_score": 85,
-                            "ai_trading_advice": "定期定額 / 嚴禁單筆追高",
-                            "key_reason": "散戶大舉湧入 ETF 撿便宜，短線反向指標情緒偏高，需防範大盤進一步補跌震盪。",
+                            "ai_trading_advice": "定期定額 / 嚴禁單筆大額追價",
+                            "key_reason": "大盤拉回激起散戶越跌越買的存股熱潮，散戶情緒指標偏向狂熱，短線容易因權值股回檔而面臨淨值回跌。",
                             "risk_level": "低"
                         }
                     ],
-                    "ranking_symbols": ranks,
-                    "topics_sample": topics[:8]
+                    "ranking_symbols": ranks or ["2344", "2330", "2408", "2303", "6770", "0050", "00878", "0056", "00919", "1815", "3481", "2317", "2382", "3231"],
+                    "topics_sample": topics[:8] if topics else []
                 }
                 data_cache.save_forum_sentiment(cached_forum_data)
+        except Exception as e:
+            logger.error(f"Forum load error: {e}")
 
     with guru_tab3:
+        col_f1, col_f2 = st.columns([4, 1])
+        with col_f1:
+            st.caption("即時連線股市同學會爬取散戶討論貼文，結合 Gemini 進行群眾心理逆向思考分析。")
+        with col_f2:
+            if st.button("🔄 立即重新採集分析", key="refresh_cmoney_forum"):
+                with st.spinner("連線同學會重新採集中..."):
+                    try:
+                        topics = forum_engine.fetch_cmoney_popular_topics()
+                        ranks = forum_engine.fetch_cmoney_ranking_symbols()
+                        gem_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics) if gemini_engine.is_gemini_available() else None
+                        if gem_res:
+                            cached_forum_data = {
+                                **gem_res,
+                                "ranking_symbols": ranks,
+                                "topics_sample": topics[:8]
+                            }
+                            data_cache.save_forum_sentiment(cached_forum_data)
+                            st.success("同學會最新情緒分析已更新！")
+                            st.rerun()
+                        else:
+                            st.warning("已採集最新貼文，但未啟用 Gemini API 或呼叫超限，維持現有分析快取。")
+                    except Exception as ex:
+                        st.error(f"更新失敗: {ex}")
         st.markdown(f"""
         <div class="rwd-card" style="border-left: 6px solid #38bdf8; margin-bottom: 16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">

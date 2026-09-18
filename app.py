@@ -1171,171 +1171,188 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
         "📋 股市同學會近 5 天熱門熱議焦點原文"
     ])
 
+    def is_etf_or_index_safe(symbol: str) -> bool:
+        try:
+            if hasattr(forum_engine, 'is_etf_or_index'):
+                return forum_engine.is_etf_or_index(symbol)
+        except Exception:
+            pass
+        s = str(symbol).strip()
+        return s.startswith(('00', '01')) or len(s) > 4 or not s.isdigit()
+
     with guru_tab1:
-        st.subheader("🔥 哲哲 (郭哲榮 摩爾投顧) 最新盤勢觀點與精選個股")
-        st.markdown("""
-        <div style="background:rgba(239,68,68,0.08); border-left:4px solid #ef4444; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
-            <b>📌 分析機制：</b>自動下載 YouTube 官方繁中字幕逐字稿，精準比對被動元件、矽晶圓、AI 伺服器等熱門焦點，擷取名師原始觀點、影片時間軸與多空論述。
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("連線 YouTube 官方影音庫，解析哲哲最新 7 天逐字字幕中..."):
-            raw_z_list = get_zhezhe_weekly_insights(max_days=7)
+        try:
+            st.subheader("🔥 哲哲 (郭哲榮 摩爾投顧) 最新盤勢觀點與精選個股")
+            st.markdown("""
+            <div style="background:rgba(239,68,68,0.08); border-left:4px solid #ef4444; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
+                <b>📌 分析機制：</b>自動下載 YouTube 官方繁中字幕逐字稿，精準比對被動元件、矽晶圓、AI 伺服器等熱門焦點，擷取名師原始觀點、影片時間軸與多空論述。
+            </div>
+            """, unsafe_allow_html=True)
             
-        if raw_z_list:
-            seen_symbols = set()
-            unique_z_list = []
-            for item in raw_z_list:
-                if item['symbol'] not in seen_symbols:
-                    seen_symbols.add(item['symbol'])
-                    unique_z_list.append(item)
-                    
-            st.markdown(f"**共擷取到 {len(unique_z_list)} 檔哲哲核心點名標的**（依最近影音排序）：")
-            
-            for item in unique_z_list:
-                evaluated = evaluate_guru_with_ai(item)
-                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
-                r_color = evaluated.get('resonance_color', '#f59e0b')
-                r_desc = evaluated.get('resonance_desc', '')
+            with st.spinner("連線 YouTube 官方影音庫，解析哲哲最新 7 天逐字字幕中..."):
+                raw_z_list = get_zhezhe_weekly_insights(max_days=7)
                 
-                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
-                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
-                            <span class="pill" style="background:rgba(59,130,246,0.15); color:#60a5fa;">⏱️ 影片時間 {item['time_tag']}</span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
-                                {item['stance']}
-                            </span>
-                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
-                                {r_badge}
-                            </span>
-                        </div>
-                    </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#ef4444; font-size:0.9rem; margin-bottom:6px;">🎙️ 哲哲官方影音重點摘要</div>
-                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
-                            <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
-                                📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
+            if raw_z_list:
+                seen_symbols = set()
+                unique_z_list = []
+                for item in raw_z_list:
+                    if item['symbol'] not in seen_symbols:
+                        seen_symbols.add(item['symbol'])
+                        unique_z_list.append(item)
+                        
+                st.markdown(f"**共擷取到 {len(unique_z_list)} 檔哲哲核心點名標的**（依最近影音排序）：")
+                
+                for item in unique_z_list:
+                    evaluated = evaluate_guru_with_ai(item)
+                    r_badge = evaluated.get('resonance_badge', '🟡 觀望')
+                    r_color = evaluated.get('resonance_color', '#f59e0b')
+                    r_desc = evaluated.get('resonance_desc', '')
+                    
+                    ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
+                    card_html = textwrap.dedent(f"""
+                    <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                    {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
+                                </h3>
+                                <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
+                                <span class="pill" style="background:rgba(59,130,246,0.15); color:#60a5fa;">⏱️ 影片時間 {item['time_tag']}</span>
+                            </div>
+                            <div>
+                                <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
+                                    {item['stance']}
+                                </span>
+                                <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
+                                    {r_badge}
+                                </span>
                             </div>
                         </div>
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
-                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#ef4444; font-size:0.9rem; margin-bottom:6px;">🎙️ 哲哲官方影音重點摘要</div>
+                                <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
+                                <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
+                                    📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
+                                </div>
                             </div>
-                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
-                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
-                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
-                                <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
-                                <div style="margin-top:4px;">
-                                    {ai_tags_html}
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                    <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
+                                    <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                                </div>
+                                <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
+                                    <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
+                                    <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
+                                    <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
+                                    <div style="margin-top:4px;">
+                                        {ai_tags_html}
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
+                            <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
+                        </div>
                     </div>
-                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
-                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button(f"🔍 帶入「個股 AI 深度診斷室」深入診斷 {item['name']}", key=f"diag_z_{item['symbol']}"):
-                    st.session_state.diag_stock_query = item['symbol']
-                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 3. 個股 AI 深度診斷室】查看完整籌碼、K線與 Gemini 覆盤！")
-        else:
-            st.info("目前 7 天內未偵測到哲哲提及之指定核心標的，請點擊側邊欄【🔄 同步刷新數據】重新擷取。")
+                    """).strip()
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    if st.button(f"🔍 帶入「個股 AI 深度診斷室」深入診斷 {item['name']}", key=f"diag_z_{item['symbol']}"):
+                        st.session_state.diag_stock_query = item['symbol']
+                        st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 3. 個股 AI 深度診斷室】查看完整籌碼、K線與 Gemini 覆盤！")
+            else:
+                st.info("目前 7 天內未偵測到哲哲提及之指定核心標的，請點擊側邊欄【🔄 同步刷新數據】重新擷取。")
+        except Exception as e:
+            logger.error(f"Tab1 error: {e}")
+            st.error(f"⚠️ 哲哲影音前瞻模組載入中遇到輕微異常: {e}")
 
     with guru_tab2:
-        st.subheader("👑 老王 (王倚隆 浦惠投顧) 最新盤勢觀點與每週焦點個股")
-        st.markdown("""
-        <div style="background:rgba(245,158,11,0.08); border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
-            <b>📌 分析機制：</b>自動解析老王愛說笑最新盤後影片、精選「今日我最熱/最弱」單元，並自動索引說明欄談及之全數個股與時間軸。
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("連線 YouTube 官方影音庫，解析老王最新盤後影片中..."):
-            raw_w_list = get_oldwang_weekly_insights(max_days=7)
+        try:
+            st.subheader("👑 老王 (王倚隆 浦惠投顧) 最新盤勢觀點與每週焦點個股")
+            st.markdown("""
+            <div style="background:rgba(245,158,11,0.08); border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
+                <b>📌 分析機制：</b>自動解析老王愛說笑最新盤後影片、精選「今日我最熱/最弱」單元，並自動索引說明欄談及之全數個股與時間軸。
+            </div>
+            """, unsafe_allow_html=True)
             
-        if raw_w_list:
-            seen_w_symbols = set()
-            unique_w_list = []
-            for item in raw_w_list:
-                if item['symbol'] not in seen_w_symbols:
-                    seen_w_symbols.add(item['symbol'])
-                    unique_w_list.append(item)
-                    
-            st.markdown(f"**共擷取到 {len(unique_w_list)} 檔老王深度追蹤標的**：")
-            
-            for item in unique_w_list:
-                evaluated = evaluate_guru_with_ai(item)
-                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
-                r_color = evaluated.get('resonance_color', '#f59e0b')
-                r_desc = evaluated.get('resonance_desc', '')
+            with st.spinner("連線 YouTube 官方影音庫，解析老王最新盤後影片中..."):
+                raw_w_list = get_oldwang_weekly_insights(max_days=7)
                 
-                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
-                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
-                            <span class="pill" style="background:rgba(245,158,11,0.15); color:#fbbf24;">⏱️ 影片時間 {item['time_tag']}</span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
-                                {item['stance']}
-                            </span>
-                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
-                                {r_badge}
-                            </span>
-                        </div>
-                    </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">🎙️ 老王官方影音觀點</div>
-                            <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
-                            <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
-                                📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
+            if raw_w_list:
+                seen_w_symbols = set()
+                unique_w_list = []
+                for item in raw_w_list:
+                    if item['symbol'] not in seen_w_symbols:
+                        seen_w_symbols.add(item['symbol'])
+                        unique_w_list.append(item)
+                        
+                st.markdown(f"**共擷取到 {len(unique_w_list)} 檔老王深度追蹤標的**：")
+                
+                for item in unique_w_list:
+                    evaluated = evaluate_guru_with_ai(item)
+                    r_badge = evaluated.get('resonance_badge', '🟡 觀望')
+                    r_color = evaluated.get('resonance_color', '#f59e0b')
+                    r_desc = evaluated.get('resonance_desc', '')
+                    
+                    ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
+                    card_html = textwrap.dedent(f"""
+                    <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                    {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
+                                </h3>
+                                <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
+                                <span class="pill" style="background:rgba(245,158,11,0.15); color:#fbbf24;">⏱️ 影片時間 {item['time_tag']}</span>
+                            </div>
+                            <div>
+                                <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
+                                    {item['stance']}
+                                </span>
+                                <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
+                                    {r_badge}
+                                </span>
                             </div>
                         </div>
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
-                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">🎙️ 老王官方影音觀點</div>
+                                <div style="font-size:0.86rem; color:#e2e8f0; line-height:1.5;">{item.get('reason', item.get('quote', '本集重點關注標的'))}</div>
+                                <div style="margin-top:8px; font-size:0.82rem; color:#94a3b8;">
+                                    📺 <a href="{item['video_url']}" target="_blank" style="color:#60a5fa; text-decoration:none;">點擊播放 YouTube 原片精準時間點 ↗</a>
+                                </div>
                             </div>
-                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
-                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
-                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
-                                <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
-                                <div style="margin-top:4px;">
-                                    {ai_tags_html}
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                    <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
+                                    <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
+                                </div>
+                                <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
+                                    <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
+                                    <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
+                                    <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
+                                    <div style="margin-top:4px;">
+                                        {ai_tags_html}
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
+                            <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
+                        </div>
                     </div>
-                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
-                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button(f"🔍 帶入「個股 AI 深度診斷室」深入診斷 {item['name']}", key=f"diag_w_{item['symbol']}"):
-                    st.session_state.diag_stock_query = item['symbol']
-                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 3. 個股 AI 深度診斷室】查看完整籌碼、K線與 Gemini 覆盤！")
-        else:
-            st.info("目前 7 天內未擷取到老王分析之個股清單，請稍候再試。")
+                    """).strip()
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    if st.button(f"🔍 帶入「個股 AI 深度診斷室」深入診斷 {item['name']}", key=f"diag_w_{item['symbol']}"):
+                        st.session_state.diag_stock_query = item['symbol']
+                        st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 3. 個股 AI 深度診斷室】查看完整籌碼、K線與 Gemini 覆盤！")
+            else:
+                st.info("目前 7 天內未擷取到老王分析之個股清單，請稍候再試。")
+        except Exception as e:
+            logger.error(f"Tab2 error: {e}")
+            st.error(f"⚠️ 老王影音前瞻模組載入中遇到輕微異常: {e}")
 
     # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
     cached_forum_data = data_cache.load_forum_sentiment()
@@ -1439,192 +1456,200 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
             logger.error(f"Forum load error: {e}")
 
     with guru_tab3:
-        col_f1, col_f2 = st.columns([4, 1])
-        with col_f1:
-            st.caption("即時連線股市同學會爬取散戶討論貼文，結合 Gemini 進行群眾心理逆向思考分析。")
-        with col_f2:
-            if st.button("🔄 立即重新採集分析", key="refresh_cmoney_forum"):
-                with st.spinner("連線同學會重新採集中..."):
-                    try:
-                        topics = forum_engine.fetch_cmoney_popular_topics()
-                        ranks = forum_engine.fetch_cmoney_ranking_symbols()
-                        gem_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics) if gemini_engine.is_gemini_available() else None
-                        if gem_res:
-                            cached_forum_data = {
-                                **gem_res,
-                                "ranking_symbols": ranks,
-                                "topics_sample": topics[:8]
-                            }
-                            data_cache.save_forum_sentiment(cached_forum_data)
-                            st.success("同學會最新情緒分析已更新！")
-                            st.rerun()
-                        else:
-                            st.warning("已採集最新貼文，但未啟用 Gemini API 或呼叫超限，維持現有分析快取。")
-                    except Exception as ex:
-                        st.error(f"更新失敗: {ex}")
-        st.markdown(f"""
-        <div class="rwd-card" style="border-left: 6px solid #38bdf8; margin-bottom: 16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                <div>
-                    <h3 style="margin:0; font-size:1.25rem;">📊 散戶情緒 vs 主力籌碼波段總體溫：<b>{cached_forum_data.get('overall_sentiment', '中性')}</b></h3>
-                    <span style="font-size:0.85rem; color:#94a3b8;">📅 快取時間：{cached_forum_data.get('cached_at', '剛才')} (專注數天至數月波段操作，排除純存股ETF)</span>
-                </div>
-                <div>
-                    <span class="pill pill-blue">🧠 波段多空照妖鏡</span>
-                    <span class="pill pill-gold">🎯 主力洗盤 vs 散戶接刀</span>
-                </div>
-            </div>
-            <div style="margin-top:12px; background:rgba(15,23,42,0.6); padding:12px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                <div style="color:#38bdf8; font-weight:700; font-size:0.9rem; margin-bottom:4px;">👥 散戶籌碼心理與集中度剖析：</div>
-                <p style="margin:0; font-size:0.9rem; line-height:1.6; color:#e2e8f0;">
-                    {cached_forum_data.get('crowd_psychology', '')}
-                </p>
-                <div style="margin-top:8px; font-size:0.86rem; color:#cbd5e1;">
-                    ⚡ <b>數天至數月波段進退指引：</b>{cached_forum_data.get('market_regime_impact', '')}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        hot_list = cached_forum_data.get("hot_stocks_analysis", [])
-        
-        # 篩選過濾純ETF標的，確保專注動能個股
-        valid_hot_list = [x for x in hot_list if not forum_engine.is_etf_or_index(x.get("symbol", ""))]
-        if not valid_hot_list:
-            valid_hot_list = hot_list
-
-        col_title, col_filter = st.columns([3, 2])
-        with col_title:
-            st.subheader("🎯 散戶 vs 主力籌碼照妖鏡（數天至數月波段雷達）")
-        with col_filter:
-            filter_mode = st.selectbox(
-                "🔍 波段信號快篩",
-                ["全部熱門標的", "🟢 主力洗盤/低吸買點", "🔴 散戶接刀/出貨警戒", "🔵 主力散戶共振/順風車"],
-                key="filter_forum_contrarian"
-            )
-        
-        # 依篩選條件過濾
-        filtered_display_list = []
-        for item in valid_hot_list:
-            verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", ""))
-            if "🟢" in filter_mode and "🟢" not in verdict:
-                continue
-            if "🔴" in filter_mode and ("🔴" not in verdict and "⚠️" not in verdict):
-                continue
-            if "🔵" in filter_mode and "🔵" not in verdict:
-                continue
-            filtered_display_list.append(item)
-
-        if filtered_display_list:
-            for item in filtered_display_list:
-                s_name = item.get("stock_name", "")
-                s_code = item.get("symbol", "").strip()
-                retail_stc = item.get("retail_sentiment", "中性")
-                score = item.get("sentiment_score", 50)
-                stage = item.get("swing_stage", "波段觀察段")
-                verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", "觀望"))
-                defense = item.get("defense_support", item.get("key_reason", "依波段月線紀律防守"))
-                strategy = item.get("swing_strategy", item.get("key_reason", ""))
-                risk = item.get("risk_level", "中")
-                
-                # 燈號顏色邏輯
-                if "🟢" in verdict or any(k in verdict for k in ["低吸", "買點", "蓄勢"]):
-                    card_border = "#10b981"
-                    badge_bg = "rgba(16,185,129,0.15)"
-                    badge_color = "#34d399"
-                elif "🔴" in verdict or "⚠️" in verdict or any(k in verdict for k in ["接刀", "出貨", "警戒", "過熱"]):
-                    card_border = "#ef4444"
-                    badge_bg = "rgba(239,68,68,0.15)"
-                    badge_color = "#f87171"
-                elif "🔵" in verdict or any(k in verdict for k in ["共振", "順風車", "順勢"]):
-                    card_border = "#3b82f6"
-                    badge_bg = "rgba(59,130,246,0.15)"
-                    badge_color = "#60a5fa"
-                else:
-                    card_border = "#f59e0b"
-                    badge_bg = "rgba(245,158,11,0.15)"
-                    badge_color = "#fbbf24"
-
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {card_border}; margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
-                                {s_name} <span style="color:#94a3b8; font-size:0.95rem;">({s_code if s_code else '題材股'})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">
-                                📍 波段位階：<b>{stage}</b>
-                            </span>
-                            <span class="pill" style="background:rgba(255,255,255,0.05); color:#94a3b8;">
-                                散戶熱度：<b>{score} 分</b> ({retail_stc})
-                            </span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{badge_bg}; color:{badge_color}; border:1px solid {badge_color}55; font-size:0.9rem; font-weight:700;">
-                                {verdict}
-                            </span>
-                            <span class="pill pill-warn">風險等級：{risk}</span>
-                        </div>
-                    </div>
-                    
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#38bdf8; font-size:0.88rem; margin-bottom:6px;">
-                                🛡️ 關鍵波段生命線防守
-                            </div>
-                            <div style="font-size:0.95rem; font-weight:700; color:#f8fafc;">
-                                {defense}
-                            </div>
-                            <div style="margin-top:6px; font-size:0.8rem; color:#94a3b8;">
-                                💡 數天至數月波段原則：未跌破防守均線前抱牢放大利潤，跌破三日內不站回嚴守停損。
-                            </div>
-                        </div>
-                        
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#fbbf24; font-size:0.88rem; margin-bottom:6px;">
-                                🎯 波段操盤執行指南 (加碼 / 續抱 / 停損)
-                            </div>
-                            <div style="font-size:0.88rem; color:#cbd5e1; line-height:1.5;">
-                                {strategy}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if s_code:
-                    col_btn1, col_btn2 = st.columns([3, 1])
-                    with col_btn1:
-                        if st.button(f"🩺 帶入「個股 AI 深度診斷室」查看 {s_name} ({s_code}) 技術籌碼與 Gemini 覆盤", key=f"diag_forum_{s_code}"):
-                            st.session_state.diag_stock_query = s_code
-                            st.info(f"已選擇 {s_name} ({s_code})，請切換至【🩺 3. 個股 AI 深度診斷室】深入檢查！")
-        else:
-            st.info("目前條件下無符合之標的，請切換快篩條件。")
-
-    with guru_tab4:
-        st.subheader("📋 股市同學會當前即時熱門動能個股排行 (已過濾純存股ETF)")
-        ranking_syms = [s for s in cached_forum_data.get("ranking_symbols", []) if not forum_engine.is_etf_or_index(s)]
-        if ranking_syms:
-            st.markdown(" ".join([f"<span class='pill pill-blue' style='font-size:0.95rem; margin:4px;'>📌 {STOCK_NAME_MAP.get(s, s)} ({s})</span>" for s in ranking_syms]), unsafe_allow_html=True)
-        else:
-            st.info("目前尚無符合之動能個股排行。")
-        
-        st.markdown("---")
-        st.subheader("💬 近期同學會社群熱門討論摘要節錄")
-        raw_samples = cached_forum_data.get("topics_sample", [])
-        for t_item in raw_samples:
-            st_tags = [t for t in t_item.get('stocks', []) if not forum_engine.is_etf_or_index(t)]
+        try:
+            col_f1, col_f2 = st.columns([4, 1])
+            with col_f1:
+                st.caption("即時連線股市同學會爬取散戶討論貼文，結合 Gemini 進行群眾心理逆向思考分析。")
+            with col_f2:
+                if st.button("🔄 立即重新採集分析", key="refresh_cmoney_forum"):
+                    with st.spinner("連線同學會重新採集中..."):
+                        try:
+                            topics = forum_engine.fetch_cmoney_popular_topics()
+                            ranks = forum_engine.fetch_cmoney_ranking_symbols()
+                            gem_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics) if gemini_engine.is_gemini_available() else None
+                            if gem_res:
+                                cached_forum_data = {
+                                    **gem_res,
+                                    "ranking_symbols": ranks,
+                                    "topics_sample": topics[:8]
+                                }
+                                data_cache.save_forum_sentiment(cached_forum_data)
+                                st.success("同學會最新情緒分析已更新！")
+                                st.rerun()
+                            else:
+                                st.warning("已採集最新貼文，但未啟用 Gemini API 或呼叫超限，維持現有分析快取。")
+                        except Exception as ex:
+                            st.error(f"更新失敗: {ex}")
             st.markdown(f"""
-            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px 14px; margin-bottom:10px; border-left:3px solid #60a5fa;">
-                <div style="font-weight:700; color:#60a5fa; font-size:0.85rem; margin-bottom:4px;">
-                    📌 討論標的：{', '.join(st_tags) or '熱門產業題材'}
+            <div class="rwd-card" style="border-left: 6px solid #38bdf8; margin-bottom: 16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <div>
+                        <h3 style="margin:0; font-size:1.25rem;">📊 散戶情緒 vs 主力籌碼波段總體溫：<b>{cached_forum_data.get('overall_sentiment', '中性')}</b></h3>
+                        <span style="font-size:0.85rem; color:#94a3b8;">📅 快取時間：{cached_forum_data.get('cached_at', '剛才')} (專注數天至數月波段操作，排除純存股ETF)</span>
+                    </div>
+                    <div>
+                        <span class="pill pill-blue">🧠 波段多空照妖鏡</span>
+                        <span class="pill pill-gold">🎯 主力洗盤 vs 散戶接刀</span>
+                    </div>
                 </div>
-                <div style="font-size:0.86rem; color:#cbd5e1; line-height:1.5;">
-                    {t_item.get('text', '')}
+                <div style="margin-top:12px; background:rgba(15,23,42,0.6); padding:12px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                    <div style="color:#38bdf8; font-weight:700; font-size:0.9rem; margin-bottom:4px;">👥 散戶籌碼心理與集中度剖析：</div>
+                    <p style="margin:0; font-size:0.9rem; line-height:1.6; color:#e2e8f0;">
+                        {cached_forum_data.get('crowd_psychology', '')}
+                    </p>
+                    <div style="margin-top:8px; font-size:0.86rem; color:#cbd5e1;">
+                        ⚡ <b>數天至數月波段進退指引：</b>{cached_forum_data.get('market_regime_impact', '')}
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+            hot_list = cached_forum_data.get("hot_stocks_analysis", [])
+            
+            # 篩選過濾純ETF標的，確保專注動能個股
+            valid_hot_list = [x for x in hot_list if not is_etf_or_index_safe(x.get("symbol", ""))]
+            if not valid_hot_list:
+                valid_hot_list = hot_list
+
+            col_title, col_filter = st.columns([3, 2])
+            with col_title:
+                st.subheader("🎯 散戶 vs 主力籌碼照妖鏡（數天至數月波段雷達）")
+            with col_filter:
+                filter_mode = st.selectbox(
+                    "🔍 波段信號快篩",
+                    ["全部熱門標的", "🟢 主力洗盤/低吸買點", "🔴 散戶接刀/出貨警戒", "🔵 主力散戶共振/順風車"],
+                    key="filter_forum_contrarian"
+                )
+            
+            # 依篩選條件過濾
+            filtered_display_list = []
+            for item in valid_hot_list:
+                verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", ""))
+                if "🟢" in filter_mode and "🟢" not in verdict:
+                    continue
+                if "🔴" in filter_mode and ("🔴" not in verdict and "⚠️" not in verdict):
+                    continue
+                if "🔵" in filter_mode and "🔵" not in verdict:
+                    continue
+                filtered_display_list.append(item)
+
+            if filtered_display_list:
+                for item in filtered_display_list:
+                    s_name = item.get("stock_name", "")
+                    s_code = item.get("symbol", "").strip()
+                    retail_stc = item.get("retail_sentiment", "中性")
+                    score = item.get("sentiment_score", 50)
+                    stage = item.get("swing_stage", "波段觀察段")
+                    verdict = item.get("contrarian_verdict", item.get("ai_trading_advice", "觀望"))
+                    defense = item.get("defense_support", item.get("key_reason", "依波段月線紀律防守"))
+                    strategy = item.get("swing_strategy", item.get("key_reason", ""))
+                    risk = item.get("risk_level", "中")
+                    
+                    # 燈號顏色邏輯
+                    if "🟢" in verdict or any(k in verdict for k in ["低吸", "買點", "蓄勢"]):
+                        card_border = "#10b981"
+                        badge_bg = "rgba(16,185,129,0.15)"
+                        badge_color = "#34d399"
+                    elif "🔴" in verdict or "⚠️" in verdict or any(k in verdict for k in ["接刀", "出貨", "警戒", "過熱"]):
+                        card_border = "#ef4444"
+                        badge_bg = "rgba(239,68,68,0.15)"
+                        badge_color = "#f87171"
+                    elif "🔵" in verdict or any(k in verdict for k in ["共振", "順風車", "順勢"]):
+                        card_border = "#3b82f6"
+                        badge_bg = "rgba(59,130,246,0.15)"
+                        badge_color = "#60a5fa"
+                    else:
+                        card_border = "#f59e0b"
+                        badge_bg = "rgba(245,158,11,0.15)"
+                        badge_color = "#fbbf24"
+
+                    card_html = textwrap.dedent(f"""
+                    <div class="rwd-card" style="border-left: 6px solid {card_border}; margin-bottom: 16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
+                                    {s_name} <span style="color:#94a3b8; font-size:0.95rem;">({s_code if s_code else '題材股'})</span>
+                                </h3>
+                                <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">
+                                    📍 波段位階：<b>{stage}</b>
+                                </span>
+                                <span class="pill" style="background:rgba(255,255,255,0.05); color:#94a3b8;">
+                                    散戶熱度：<b>{score} 分</b> ({retail_stc})
+                                </span>
+                            </div>
+                            <div>
+                                <span class="pill" style="background:{badge_bg}; color:{badge_color}; border:1px solid {badge_color}55; font-size:0.9rem; font-weight:700;">
+                                    {verdict}
+                                </span>
+                                <span class="pill pill-warn">風險等級：{risk}</span>
+                            </div>
+                        </div>
+                        
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px;">
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#38bdf8; font-size:0.88rem; margin-bottom:6px;">
+                                    🛡️ 關鍵波段生命線防守
+                                </div>
+                                <div style="font-size:0.95rem; font-weight:700; color:#f8fafc;">
+                                    {defense}
+                                </div>
+                                <div style="margin-top:6px; font-size:0.8rem; color:#94a3b8;">
+                                    💡 數天至數月波段原則：未跌破防守均線前抱牢放大利潤，跌破三日內不站回嚴守停損。
+                                </div>
+                            </div>
+                            
+                            <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-weight:700; color:#fbbf24; font-size:0.88rem; margin-bottom:6px;">
+                                    🎯 波段操盤執行指南 (加碼 / 續抱 / 停損)
+                                </div>
+                                <div style="font-size:0.88rem; color:#cbd5e1; line-height:1.5;">
+                                    {strategy}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """).strip()
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    if s_code:
+                        col_btn1, col_btn2 = st.columns([3, 1])
+                        with col_btn1:
+                            if st.button(f"🩺 帶入「個股 AI 深度診斷室」查看 {s_name} ({s_code}) 技術籌碼與 Gemini 覆盤", key=f"diag_forum_{s_code}"):
+                                st.session_state.diag_stock_query = s_code
+                                st.info(f"已選擇 {s_name} ({s_code})，請切換至【🩺 3. 個股 AI 深度診斷室】深入檢查！")
+            else:
+                st.info("目前條件下無符合之標的，請切換快篩條件。")
+        except Exception as e:
+            logger.error(f"Tab3 error: {e}")
+            st.error(f"⚠️ 散戶情緒溫度計模組載入中遇到輕微異常: {e}")
+
+    with guru_tab4:
+        try:
+            st.subheader("📋 股市同學會當前即時熱門動能個股排行 (已過濾純存股ETF)")
+            ranking_syms = [s for s in cached_forum_data.get("ranking_symbols", []) if not is_etf_or_index_safe(s)]
+            if ranking_syms:
+                st.markdown(" ".join([f"<span class='pill pill-blue' style='font-size:0.95rem; margin:4px;'>📌 {STOCK_NAME_MAP.get(s, s)} ({s})</span>" for s in ranking_syms]), unsafe_allow_html=True)
+            else:
+                st.info("目前尚無符合之動能個股排行。")
+            
+            st.markdown("---")
+            st.subheader("💬 近期同學會社群熱門討論摘要節錄")
+            raw_samples = cached_forum_data.get("topics_sample", [])
+            for t_item in raw_samples:
+                st_tags = [t for t in t_item.get('stocks', []) if not is_etf_or_index_safe(t)]
+                st.markdown(f"""
+                <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px 14px; margin-bottom:10px; border-left:3px solid #60a5fa;">
+                    <div style="font-weight:700; color:#60a5fa; font-size:0.85rem; margin-bottom:4px;">
+                        📌 討論標的：{', '.join(st_tags) or '熱門產業題材'}
+                    </div>
+                    <div style="font-size:0.86rem; color:#cbd5e1; line-height:1.5;">
+                        {t_item.get('text', '')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            logger.error(f"Tab4 error: {e}")
+            st.error(f"⚠️ 同學會熱門排行模組載入中遇到輕微異常: {e}")
 
 elif menu == "💼 5. 我的持股庫存管家 (停損警報+Line推播)":
     st.title("💼 我的持股庫存管家與即時風險警報")

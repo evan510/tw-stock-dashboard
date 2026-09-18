@@ -9,6 +9,12 @@ logger = logging.getLogger(__name__)
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
+__all__ = [
+    'fetch_cmoney_popular_topics',
+    'fetch_cmoney_ranking_symbols',
+    'is_etf_or_index',
+    'evaluate_swing_contrarian_signal'
+]
 
 # 排除存股 ETF、期貨與大盤標籤，專注動能個股
 IGNORE_SYMBOLS = {

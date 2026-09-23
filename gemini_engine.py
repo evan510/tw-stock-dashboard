@@ -98,9 +98,11 @@ def clear_api_key() -> bool:
 def get_supported_model_names(client):
     """
     動態向 Google ModelService.ListModels 查詢當前 API Key 支援的所有 generateContent 模型，
-    自動依據 Flash 優先、Pro 次之排序，若動態查詢失敗則自動採用最佳安全候選列表。
+    嚴格過濾排除 image、preview-image、tts、audio、embedding 等非文字或配額為0之專用模型，
+    自動以 gemini-2.0-flash 正式版為第一優先、純文字 2.5-flash 次之。
     """
-    fallback_candidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    fallback_candidates = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro']
+    EXCLUDED_KEYWORDS = ['image', 'imagen', 'audio', 'tts', 'embedding', 'live', 'realtime', 'whisper']
     try:
         models = client.models.list()
         active = []
@@ -108,23 +110,35 @@ def get_supported_model_names(client):
             actions = getattr(m, 'supported_actions', []) or []
             if 'generateContent' in actions:
                 clean_name = m.name.replace('models/', '').strip()
-                if 'gemini' in clean_name:
-                    active.append(clean_name)
+                name_lower = clean_name.lower()
+                if 'gemini' not in name_lower:
+                    continue
+                if any(bad in name_lower for bad in EXCLUDED_KEYWORDS):
+                    continue
+                active.append(clean_name)
         if active:
             def model_priority(name):
                 n = name.lower()
-                if '2.5-flash' in n:
+                # 1. 最穩健、免費額度充足且正式發布之 2.0-flash
+                if n == 'gemini-2.0-flash' or n == 'gemini-2.0-flash-001':
                     return 1
-                if '2.0-flash' in n and 'exp' not in n:
+                # 2. 純文字 2.5-flash
+                if '2.5-flash' in n and 'lite' not in n:
                     return 2
-                if 'flash' in n and 'lite' not in n:
+                # 3. 2.0-flash-lite 輕量版
+                if '2.0-flash-lite' in n:
                     return 3
-                if 'flash-lite' in n:
+                # 4. 其他 flash 文字模型
+                if 'flash' in n and 'exp' not in n and 'lite' not in n:
                     return 4
+                # 5. Pro 系列高階模型
                 if '2.5-pro' in n:
                     return 5
-                if 'pro' in n:
+                if 'pro' in n and 'exp' not in n:
                     return 6
+                # 6. 其餘模型
+                if 'flash' in n:
+                    return 7
                 return 10
             active.sort(key=model_priority)
             return active

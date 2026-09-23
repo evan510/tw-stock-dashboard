@@ -1,9 +1,12 @@
+import logging
 import threading
 import textwrap
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 import data_engine
 from data_engine import (
@@ -59,6 +62,15 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+def is_etf_or_index_safe(symbol: str) -> bool:
+    try:
+        if hasattr(forum_engine, 'is_etf_or_index'):
+            return forum_engine.is_etf_or_index(symbol)
+    except Exception:
+        pass
+    s = str(symbol).strip()
+    return s.startswith(('00', '01')) or len(s) > 4 or not s.isdigit()
 
 # 判斷台股盤中/盤後時段 (精確鎖定台灣台北時區 UTC+8)
 tw_tz = timezone(timedelta(hours=8))
@@ -921,6 +933,7 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
         st.write("")
         if st.button("🚀 啟動 AI 全方位診斷", type="primary", use_container_width=True):
             st.session_state.diag_stock_query = query_input
+            st.session_state.force_trigger_gemini = True
             st.rerun()
         
     if query_input:
@@ -930,6 +943,32 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
         if err:
             st.error(err)
         else:
+            # 判斷是否需要主動執行 Gemini AI 覆盤
+            if st.session_state.get("force_trigger_gemini", False):
+                st.session_state.force_trigger_gemini = False
+                has_key = bool(gemini_engine.get_api_key())
+                if has_key:
+                    with st.spinner(f"🤖 Google Gemini AI 首席操盤手正在深入研讀【{data['name']} ({data['symbol']})】即時量價、籌碼與新聞..."):
+                        tech_info = {
+                            'close': data['close'], 'pct_change': data['pct_change'],
+                            'ma5': data['ma5'], 'ma10': data['ma10'], 'ma20': data['ma20'], 'ma60': data['ma60'],
+                            'stop_loss': data['stop_loss'], 'target1': data['target1'],
+                            'rs_factor': data.get('rs_factor', 0), 'vol': data.get('vol', 0),
+                            'vol_ratio': data.get('vol_ratio', 1.0),
+                            'cloud_status': data.get('oldwang', {}).get('cloud_status', '均線整理')
+                        }
+                        news_titles = [n['title'] for n in data.get('news', [])[:5]]
+                        res_ai = gemini_engine.analyze_single_stock_with_gemini(
+                            data['symbol'], data['name'], news_titles, tech_info
+                        )
+                        if res_ai:
+                            data_cache.save_stock_ai_analysis(data['symbol'], res_ai)
+                            st.toast(f"✅ 【{data['name']}】Gemini AI 操盤覆盤已就緒！", icon="🤖")
+                        else:
+                            st.warning("⚠️ Gemini API 呼叫未回傳有效結果，請確認金鑰配額或網路連線。")
+                else:
+                    st.warning("💡 提示：您尚未配置 Gemini API Key，請先於側邊欄輸入 Key 並點擊 SAVE，即可啟用 Gemini 深度操盤覆盤！")
+
             # 取得防禦性預設值，防止熱重載時暫存模組版本不一致引發 KeyError
             sig_color = data.get('signal_color', '#3b82f6')
             sig_bg = data.get('signal_bg', 'rgba(59, 130, 246, 0.15)')
@@ -1113,26 +1152,29 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
             st.markdown("---")
             # 6. Gemini 首席操盤手深度覆盤 (按需調用 + 當日快取保護)
             st.markdown(f"#### 🧠 Gemini 首席操盤手深度覆盤 🤖[Gemini AI]")
-            st.caption("點擊下方按鈕召喚 Gemini 針對【量價結構 + 籌碼動能 + 即時新聞 + 風險防守】進行全方位短線/波段操盤評估（當日自動快取，不重複扣 Token）。")
+            st.caption("結合【量價結構 + 籌碼動能 + 即時新聞 + 風險防守】進行全方位短線/波段操盤評估（當日自動快取，不重複扣 Token）。")
 
             cached_ai = data_cache.get_stock_ai_analysis_from_cache(data['symbol'])
             col_ai_btn, col_ai_info = st.columns([2, 3])
             with col_ai_btn:
-                trigger_ai = st.button(f"🚀 召喚 Gemini 操盤手深度診斷 ({data['symbol']})", type="primary", use_container_width=True)
+                trigger_ai = st.button(f"🚀 {'重新召喚' if cached_ai else '立即召喚'} Gemini 深度覆盤 ({data['symbol']})", type="primary", use_container_width=True, key="btn_gemini_sec6")
             with col_ai_info:
                 if cached_ai:
-                    st.caption(f"⚡ 已存在今日快取紀錄 ({cached_ai.get('analyzed_at', '今日')})，無需消耗額外 Token。")
+                    st.caption(f"⚡ 已存在今日快取紀錄 ({cached_ai.get('analyzed_at', '今日')})，無需消耗額外 Token。點擊左方可強制重跑。")
                 else:
                     st.caption("💡 尚未執行今日 AI 深度評估，點擊左方按鈕即可啟動。")
 
-            if trigger_ai or cached_ai:
-                if not cached_ai and trigger_ai:
+            if trigger_ai:
+                has_k = bool(gemini_engine.get_api_key())
+                if has_k:
                     with st.spinner(f"Gemini AI 正在深入研讀 {data['name']} 盤勢與新聞，提煉操盤筆記中..."):
                         tech_info = {
                             'close': data['close'], 'pct_change': data['pct_change'],
-                            'ma5': data['ma5'], 'ma20': data['ma20'], 'ma60': data['ma60'],
+                            'ma5': data['ma5'], 'ma10': data['ma10'], 'ma20': data['ma20'], 'ma60': data['ma60'],
                             'stop_loss': data['stop_loss'], 'target1': data['target1'],
-                            'rs_factor': data.get('rs_factor', 0), 'vol_ratio': data['vol_ratio']
+                            'rs_factor': data.get('rs_factor', 0), 'vol': data.get('vol', 0),
+                            'vol_ratio': data.get('vol_ratio', 1.0),
+                            'cloud_status': data.get('oldwang', {}).get('cloud_status', '均線整理')
                         }
                         news_titles = [n['title'] for n in data.get('news', [])[:5]]
                         res_ai = gemini_engine.analyze_single_stock_with_gemini(
@@ -1141,31 +1183,42 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
                         if res_ai:
                             data_cache.save_stock_ai_analysis(data['symbol'], res_ai)
                             cached_ai = res_ai
+                            st.toast(f"✅ 【{data['name']}】Gemini 深度覆盤已更新！", icon="🤖")
                             st.rerun()
+                        else:
+                            st.error("Gemini 呼叫未回傳有效結果，請確認 API 配額。")
+                else:
+                    st.warning("⚠️ 尚未配置 Gemini API Key，請先於側邊欄輸入並點擊 SAVE。")
 
-                if cached_ai:
-                    ai_posture = cached_ai.get('posture', '中立')
-                    badge_color = "#10b981" if any(w in ai_posture for w in ["多", "買", "強"]) else ("#ef4444" if any(w in ai_posture for w in ["空", "賣", "弱"]) else "#f59e0b")
-                    st.markdown(f"""
-                    <div class="rwd-card" style="border-left: 6px solid {badge_color}; background: rgba(15,23,42,0.6); margin-top:10px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                            <div>
-                                <h3 style="margin:0; font-size:1.2rem;">🤖 操盤總結定位：<span style="color:{badge_color}; font-weight:bold;">{ai_posture}</span> (評分：{cached_ai.get('score', 60)} / 100)</h3>
-                                <span style="font-size:0.8rem; color:#94a3b8;">📅 診斷時間：{cached_ai.get('analyzed_at', '今日')} ｜ 核心亮點：{cached_ai.get('catalyst', '技術回測/動能支撐')}</span>
-                            </div>
-                            <div>
-                                <span class="pill pill-warn">停損底線：${cached_ai.get('stop_loss_plan', data['stop_loss'])}</span>
-                                <span class="pill pill-buy">波段目標：${cached_ai.get('target_plan', data['target1'])}</span>
-                            </div>
+            if cached_ai:
+                ai_posture = cached_ai.get('verdict_signal', cached_ai.get('posture', '中立觀望'))
+                badge_color = "#10b981" if any(w in ai_posture for w in ["多", "買", "強", "低接"]) else ("#ef4444" if any(w in ai_posture for w in ["空", "賣", "弱", "停損", "減碼"]) else "#f59e0b")
+                sl_p = cached_ai.get('stop_loss_point', cached_ai.get('stop_loss_plan', data['stop_loss']))
+                tp_p = cached_ai.get('target_point', cached_ai.get('target_plan', data['target1']))
+                entry_c = cached_ai.get('entry_condition', data.get('entry_zone', '依均線防守'))
+                notes_c = cached_ai.get('trader_notes', '')
+                risk_c = cached_ai.get('risk_warning', '依均線防守紀律操作')
+
+                st.markdown(f"""
+                <div class="rwd-card" style="border-left: 6px solid {badge_color}; background: rgba(15,23,42,0.7); margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <h3 style="margin:0; font-size:1.2rem;">🤖 操盤定位：<span style="color:{badge_color}; font-weight:bold;">{ai_posture}</span></h3>
+                            <span style="font-size:0.8rem; color:#94a3b8;">📅 診斷時間：{cached_ai.get('analyzed_at', '今日')} ｜ 建議進場條件：{entry_c}</span>
                         </div>
-                        <div style="margin-top:12px; font-size:0.92rem; line-height:1.6; color:#e2e8f0; background:rgba(255,255,255,0.03); padding:12px; border-radius:6px;">
-                            <b>📝 首席操盤手筆記：</b><br>{cached_ai.get('trader_notes', '')}
-                        </div>
-                        <div style="margin-top:8px; font-size:0.88rem; color:#f87171; line-height:1.5;">
-                            ⚠️ <b>關鍵風險警示：</b>{cached_ai.get('risk_warning', '')}
+                        <div>
+                            <span class="pill pill-warn">停損防守：${sl_p}</span>
+                            <span class="pill pill-buy">波段目標：${tp_p}</span>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="margin-top:12px; font-size:0.92rem; line-height:1.6; color:#e2e8f0; background:rgba(255,255,255,0.03); padding:12px; border-radius:6px;">
+                        <b>📝 首席操盤手核心覆盤筆記：</b><br>{notes_c}
+                    </div>
+                    <div style="margin-top:8px; font-size:0.88rem; color:#f87171; line-height:1.5;">
+                        ⚠️ <b>關鍵風險警示：</b>{risk_c}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             st.markdown("---")
             st.markdown(f"#### 📰 【{data['name']}】最新重大即時新聞")
@@ -1193,14 +1246,6 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
         "📋 股市同學會近 5 天熱門熱議焦點原文"
     ])
 
-    def is_etf_or_index_safe(symbol: str) -> bool:
-        try:
-            if hasattr(forum_engine, 'is_etf_or_index'):
-                return forum_engine.is_etf_or_index(symbol)
-        except Exception:
-            pass
-        s = str(symbol).strip()
-        return s.startswith(('00', '01')) or len(s) > 4 or not s.isdigit()
 
     with guru_tab1:
         try:
@@ -1650,7 +1695,7 @@ elif menu == "📡 4. 社群情報與名師風向 🤖[Gemini AI]":
             st.subheader("📋 股市同學會當前即時熱門動能個股排行 (已過濾純存股ETF)")
             ranking_syms = [s for s in cached_forum_data.get("ranking_symbols", []) if not is_etf_or_index_safe(s)]
             if ranking_syms:
-                st.markdown(" ".join([f"<span class='pill pill-blue' style='font-size:0.95rem; margin:4px;'>📌 {STOCK_NAME_MAP.get(s, s)} ({s})</span>" for s in ranking_syms]), unsafe_allow_html=True)
+                st.markdown(" ".join([f"<span class='pill pill-blue' style='font-size:0.95rem; margin:4px;'>📌 {config.STOCK_NAME_MAP.get(s, s)} ({s})</span>" for s in ranking_syms]), unsafe_allow_html=True)
             else:
                 st.info("目前尚無符合之動能個股排行。")
             

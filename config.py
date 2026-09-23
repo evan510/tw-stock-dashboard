@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 APP_TITLE = "台股戰情室 PRO"
-APP_VERSION = "v4.5-Claude"
+APP_VERSION = "v5.1.0"
 APP_ICON = "📈"
 
 # ─── YT 分析師頻道設定（可自訂擴充）─────────────────────────────

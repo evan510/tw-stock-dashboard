@@ -95,6 +95,43 @@ def clear_api_key() -> bool:
         logger.error(f"Failed to clear GEMINI_API_KEY: {e}")
         return False
 
+def get_supported_model_names(client):
+    """
+    動態向 Google ModelService.ListModels 查詢當前 API Key 支援的所有 generateContent 模型，
+    自動依據 Flash 優先、Pro 次之排序，若動態查詢失敗則自動採用最佳安全候選列表。
+    """
+    fallback_candidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    try:
+        models = client.models.list()
+        active = []
+        for m in models:
+            actions = getattr(m, 'supported_actions', []) or []
+            if 'generateContent' in actions:
+                clean_name = m.name.replace('models/', '').strip()
+                if 'gemini' in clean_name:
+                    active.append(clean_name)
+        if active:
+            def model_priority(name):
+                n = name.lower()
+                if '2.5-flash' in n:
+                    return 1
+                if '2.0-flash' in n and 'exp' not in n:
+                    return 2
+                if 'flash' in n and 'lite' not in n:
+                    return 3
+                if 'flash-lite' in n:
+                    return 4
+                if '2.5-pro' in n:
+                    return 5
+                if 'pro' in n:
+                    return 6
+                return 10
+            active.sort(key=model_priority)
+            return active
+    except Exception as e:
+        logger.warning(f"動態查詢可用模型清單失敗，改用備援清單: {e}")
+    return fallback_candidates
+
 def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc, custom_key=None):
     api_key = get_api_key(custom_key)
     if not api_key:
@@ -111,7 +148,7 @@ def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc,
 內容摘要：
 {transcript_or_desc[:4500]}
 
-請厷格以繁體中文（台灣習慣用語）提煉，並回傳標準JSON格式：
+請嚴格以繁體中文（台灣習慣用語）提煉，並回傳標準JSON格式：
 {
   "guru_summary": "名師對本集大盤多空或結論摘要（60~100字）",
   "mentioned_stocks": [
@@ -121,12 +158,13 @@ def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc,
       "stance": "看多 / 看空 / 觀望 / 買黑不買紅",
       "guru_quote": "名師原話關鍵論點摘錄（50字內）",
       "action_trigger": "建議進場或觀察條件",
-      "defense_price": "建議防守或停�%8損價位",
+      "defense_price": "建議防守或停損價位",
       "confidence": "高 / 中 / 低"
     }
   ]
 }"""
-        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
+        models_to_try = get_supported_model_names(client)
+        for m in models_to_try[:4]:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -190,7 +228,8 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
     }}
   ]
 }}"""
-        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
+        models_to_try = get_supported_model_names(client)
+        for m in models_to_try[:4]:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -230,7 +269,8 @@ def test_api_connection(custom_key=None):
     try:
         from google import genai
         client = genai.Client(api_key=api_key)
-        for m in ['gemini-2.0-flash', 'gemini-1.5-flash']:
+        models_to_try = get_supported_model_names(client)
+        for m in models_to_try[:4]:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -292,7 +332,8 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
   "risk_warning": "最大潛在風險警示（例如：短線乖離過大、主力出貨、大盤風向偏空）"
 }}
 """
-        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+        models_to_try = get_supported_model_names(client)
+        for m in models_to_try[:4]:
             try:
                 resp = client.models.generate_content(
                     model=m,

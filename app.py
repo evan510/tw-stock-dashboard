@@ -296,13 +296,35 @@ last_mod = usage_stats.get("last_module", "無")
 with st.sidebar.expander("🤖 Google Gemini AI 核心與用量", expanded=(not bool(current_api_key))):
     if current_api_key:
         st.success("🟢 Gemini API 已連線就緒")
+        st.caption("🔒 金鑰已安全封存於系統底層 (.env)，前端畫面不對外洩漏。")
     else:
-        st.warning("🟡 未偵測到 Gemini API Key")
-    custom_key_input = st.text_input("Gemini API Key：", value=current_api_key, type="password", help="支援從 .env 自動載入，亦可在此手動輸入")
-    if custom_key_input and custom_key_input != current_api_key:
-        import os
-        os.environ['GEMINI_API_KEY'] = custom_key_input.strip()
-        st.success("API Key 已即時更新！")
+        st.warning("🟡 系統尚未配置 Gemini API Key")
+        
+    custom_key_input = st.text_input(
+        "輸入 Gemini API Key：", 
+        value="", 
+        type="password", 
+        placeholder="在此貼上 API Key（輸入後點擊 SAVE）...",
+        help="輸入後點擊下方 SAVE 即可寫入系統底層記錄 (.env) 並自動隱蔽防護"
+    )
+    
+    col_save, col_clear = st.columns([1, 1])
+    with col_save:
+        if st.button("💾 SAVE (儲存)", type="primary", use_container_width=True):
+            if custom_key_input.strip():
+                if gemini_engine.save_api_key(custom_key_input.strip()):
+                    st.toast("✅ API Key 已安全存入底層記錄！", icon="💾")
+                    st.rerun()
+                else:
+                    st.error("儲存失敗，請檢查底層檔案寫入權限。")
+            else:
+                st.warning("請先輸入金鑰再點擊 SAVE！")
+    with col_clear:
+        if current_api_key:
+            if st.button("🗑️ 清除金鑰", use_container_width=True):
+                gemini_engine.clear_api_key()
+                st.toast("⚠️ 已自系統底層清除金鑰！", icon="🗑️")
+                st.rerun()
 
     st.markdown("##### 📊 本地 API 實時用量統計")
     # 今日呼叫與進度條 (以免費額度 1500 RPD 為基準)

@@ -7,10 +7,93 @@ import data_cache
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
 def get_api_key(custom_key=None):
     if custom_key and str(custom_key).strip():
         return str(custom_key).strip()
-    return os.environ.get('GEMINI_API_KEY', '').strip()
+    
+    # 1. 環境變數優先
+    k = os.environ.get('GEMINI_API_KEY', '').strip()
+    if k:
+        return k
+        
+    # 2. Streamlit Secrets (若在 Streamlit Cloud 部署)
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            sec_k = str(st.secrets["GEMINI_API_KEY"]).strip()
+            if sec_k:
+                os.environ['GEMINI_API_KEY'] = sec_k
+                return sec_k
+    except Exception:
+        pass
+        
+    # 3. 實體 .env 檔案直接解析
+    if os.path.exists(ENV_PATH):
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("GEMINI_API_KEY="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if val:
+                            os.environ['GEMINI_API_KEY'] = val
+                            return val
+        except Exception as e:
+            logger.warning(f"Error reading .env: {e}")
+            
+    return ""
+
+def save_api_key(new_key: str) -> bool:
+    """將 API Key 儲存至根目錄 .env 實體檔案與環境變數"""
+    try:
+        clean_key = str(new_key).strip()
+        lines = []
+        key_found = False
+        if os.path.exists(ENV_PATH):
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        
+        new_lines = []
+        for line in lines:
+            if line.strip().startswith("GEMINI_API_KEY="):
+                new_lines.append(f"GEMINI_API_KEY={clean_key}\n")
+                key_found = True
+            else:
+                new_lines.append(line)
+        if not key_found:
+            new_lines.append(f"GEMINI_API_KEY={clean_key}\n")
+            
+        with open(ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+            
+        os.environ['GEMINI_API_KEY'] = clean_key
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save GEMINI_API_KEY: {e}")
+        return False
+
+def clear_api_key() -> bool:
+    """從 .env 檔案與環境變數中清除 API Key"""
+    try:
+        if os.path.exists(ENV_PATH):
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            new_lines = []
+            for line in lines:
+                if line.strip().startswith("GEMINI_API_KEY="):
+                    new_lines.append("GEMINI_API_KEY=\n")
+                else:
+                    new_lines.append(line)
+            with open(ENV_PATH, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear GEMINI_API_KEY: {e}")
+        return False
 
 def analyze_guru_content_with_gemini(guru_name, video_title, transcript_or_desc, custom_key=None):
     api_key = get_api_key(custom_key)

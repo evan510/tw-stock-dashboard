@@ -1,12 +1,22 @@
 import os
 import json
 import logging
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 
-load_dotenv()
+# 找到 .env 的絕對路徑（與 gemini_engine.py 同目錄）
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+# 啟動時載入一次（override=True 確保 .env 蓋過系統環境變數）
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
+
 logger = logging.getLogger(__name__)
 
 def get_api_key(custom_key=None):
+    """
+    讀取 API Key 優先順序：
+    1. 明確傳入的 custom_key
+    2. os.environ（含 load_dotenv 載入的值，以及前端 Save 後即時寫入的值）
+    """
     if custom_key and str(custom_key).strip():
         return str(custom_key).strip()
     return os.environ.get('GEMINI_API_KEY', '').strip()

@@ -1,0 +1,63 @@
+name: 台股戰情室定時推播服務
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC 時間 (台灣時間 UTC+8)
+    # 避開全球整點與半點排隊塞車高峰，微調前置幾分鐘：
+    # 台灣時間 08:28 -> UTC 00:28 (週一到週五)
+    - cron: '28 0 * * 1-5'
+    # 台灣時間 09:28 -> UTC 01:28 (週一到週五)
+    - cron: '28 1 * * 1-5'
+    # 台灣時間 15:28 -> UTC 07:28 (週一到週五)
+    - cron: '28 7 * * 1-5'
+  # 支援在 GitHub 網頁上手動點擊立即測試 (workflow_dispatch)
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: '選擇要測試推播的時段 (auto, 0830, 0930, 1530)'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - 'auto'
+          - '0830'
+          - '0930'
+          - '1530'
+
+jobs:
+  scheduled_notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 簽出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 設置 Python 3.11 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安裝執行依賴套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 執行推播腳本
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          SLOT_ARG="auto"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SLOT_ARG="${{ github.event.inputs.slot }}"
+          elif [ "${{ github.event.schedule }}" = "28 0 * * 1-5" ]; then
+            SLOT_ARG="0830"
+          elif [ "${{ github.event.schedule }}" = "28 1 * * 1-5" ]; then
+            SLOT_ARG="0930"
+          elif [ "${{ github.event.schedule }}" = "28 7 * * 1-5" ]; then
+            SLOT_ARG="1530"
+          fi
+          echo "執行時段: $SLOT_ARG (事件來源: ${{ github.event_name }}, 排程定義: ${{ github.event.schedule }})"
+          python run_scheduled_push.py "$SLOT_ARG"
+

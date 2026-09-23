@@ -212,9 +212,47 @@ def analyze_forum_sentiment_with_gemini(topics_list, custom_key=None):
         logger.error(f'Gemini forum analysis failed: {e}')
         return None
 
-def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, tech_info: dict, custom_key=None):
+_LAST_ERROR = ""
+
+def get_last_error():
+    global _LAST_ERROR
+    return _LAST_ERROR
+
+def test_api_connection(custom_key=None):
+    """
+    發送一次輕量測試請求至 Google Gemini API，驗證金鑰有效性並記錄 1 次用量
+    """
+    global _LAST_ERROR
     api_key = get_api_key(custom_key)
     if not api_key:
+        _LAST_ERROR = "尚未設定 Gemini API Key，請先於側邊欄輸入並點擊 SAVE 儲存。"
+        return False, _LAST_ERROR
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        for m in ['gemini-2.0-flash', 'gemini-1.5-flash']:
+            try:
+                resp = client.models.generate_content(
+                    model=m,
+                    contents='請回覆一句簡短繁體中文台股祝福語（10字內）'
+                )
+                if resp and resp.text:
+                    data_cache.record_api_call(module_name="API連線測試", model_name=m)
+                    _LAST_ERROR = ""
+                    return True, f"連線成功！Google Gemini ({m}) 回應：{resp.text.strip()}"
+            except Exception as em:
+                _LAST_ERROR = f"模型 {m} 呼叫失敗: {em}"
+                continue
+        return False, _LAST_ERROR or "Google 回傳空白內容"
+    except Exception as e:
+        _LAST_ERROR = f"API 呼叫異常: {e}"
+        return False, _LAST_ERROR
+
+def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, tech_info: dict, custom_key=None):
+    global _LAST_ERROR
+    api_key = get_api_key(custom_key)
+    if not api_key:
+        _LAST_ERROR = "未找到有效的 GEMINI_API_KEY，請先至側邊欄填入並點擊 SAVE。"
         return None
 
     try:
@@ -223,11 +261,17 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
 
         client = genai.Client(api_key=api_key)
         
-        # 組裝新聞與技術面上下文
-        news_text = "\n".join([f"• {n.get('title', '')} ({n.get('publisher', '')})" for n in news_list[:4]]) or "近期無重大突發新聞"
+        # 安全組裝新聞（相容 dict 與純字串格式，徹底防範 AttributeError）
+        formatted_news = []
+        for n in news_list[:4]:
+            if isinstance(n, dict):
+                formatted_news.append(f"• {n.get('title', '')} ({n.get('publisher', '')})")
+            elif isinstance(n, str):
+                formatted_news.append(f"• {n.strip()}")
+        news_text = "\n".join(formatted_news) or "近期無重大突發新聞"
         
         prompt = f"""
-你是一位精通台股短線籌碼、老王均線與當沖/波段作戰的「資深首席操盤手」。
+你是精通台股短線籌碼、老王均線與當沖/波段作戰的「資深首席操盤手」。
 請針對以下個股進行【客觀操盤決策與覆盤報告】：
 
 【個股標的】：{name} ({symbol})
@@ -248,7 +292,7 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
   "risk_warning": "最大潛在風險警示（例如：短線乖離過大、主力出貨、大盤風向偏空）"
 }}
 """
-        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro']:
+        for m in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
             try:
                 resp = client.models.generate_content(
                     model=m,
@@ -266,15 +310,18 @@ def analyze_single_stock_with_gemini(symbol: str, name: str, news_list: list, te
                     parsed['posture'] = parsed.get('verdict_signal', '波段關注')
                     parsed['stop_loss_plan'] = parsed.get('stop_loss_point', str(tech_info.get('stop_loss', '')))
                     parsed['target_plan'] = parsed.get('target_point', str(tech_info.get('target1', '')))
-                    parsed['score'] = 75 if any(x in parsed['posture'] for x in ['多', '買', '強']) else (45 if any(x in parsed['posture'] for x in ['空', '賣', '損']) else 60)
+                    parsed['score'] = 75 if any(x in parsed['posture'] for x in ['多', '買', '強', '低接']) else (45 if any(x in parsed['posture'] for x in ['空', '賣', '損', '減碼']) else 60)
                     parsed['catalyst'] = parsed.get('entry_condition', '短線量價型態確立')
                     data_cache.record_api_call(module_name=f"個股診斷 ({name})", model_name=m)
+                    _LAST_ERROR = ""
                     return parsed
             except Exception as em:
+                _LAST_ERROR = f"模型 {m} 錯誤: {em}"
                 logger.warning(f'Stock diagnosis model {m} failed: {em}')
                 continue
         return None
     except Exception as e:
+        _LAST_ERROR = f"執行異常: {e}"
         logger.error(f'Gemini stock diagnosis error: {e}')
         return None
 

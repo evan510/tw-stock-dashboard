@@ -338,6 +338,16 @@ with st.sidebar.expander("🤖 Google Gemini AI 核心與用量", expanded=(not 
                 st.toast("⚠️ 已自系統底層清除金鑰！", icon="🗑️")
                 st.rerun()
 
+    if current_api_key:
+        if st.button("⚡ 測試 API 連線 (打卡 1 次用量)", use_container_width=True, key="btn_test_api_conn"):
+            with st.spinner("向 Google Gemini 發送測試請求中..."):
+                ok, msg = gemini_engine.test_api_connection()
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
     st.markdown("##### 📊 本地 API 實時用量統計")
     # 今日呼叫與進度條 (以免費額度 1500 RPD 為基準)
     pct_used = min(1.0, today_calls / 1500.0)
@@ -965,7 +975,8 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
                             data_cache.save_stock_ai_analysis(data['symbol'], res_ai)
                             st.toast(f"✅ 【{data['name']}】Gemini AI 操盤覆盤已就緒！", icon="🤖")
                         else:
-                            st.warning("⚠️ Gemini API 呼叫未回傳有效結果，請確認金鑰配額或網路連線。")
+                            last_err = gemini_engine.get_last_error()
+                            st.warning(f"⚠️ Gemini API 呼叫未回傳有效結果：{last_err}" if last_err else "⚠️ Gemini API 呼叫未回傳有效結果，請確認金鑰配額或網路連線。")
                 else:
                     st.warning("💡 提示：您尚未配置 Gemini API Key，請先於側邊欄輸入 Key 並點擊 SAVE，即可啟用 Gemini 深度操盤覆盤！")
 
@@ -1186,7 +1197,8 @@ elif menu == "🩺 3. 個股 AI 深度診斷室 🤖[Gemini AI]":
                             st.toast(f"✅ 【{data['name']}】Gemini 深度覆盤已更新！", icon="🤖")
                             st.rerun()
                         else:
-                            st.error("Gemini 呼叫未回傳有效結果，請確認 API 配額。")
+                            last_err = gemini_engine.get_last_error()
+                            st.error(f"Gemini 呼叫失敗：{last_err}" if last_err else "Gemini 呼叫未回傳有效結果，請確認 API 配額。")
                 else:
                     st.warning("⚠️ 尚未配置 Gemini API Key，請先於側邊欄輸入並點擊 SAVE。")
 

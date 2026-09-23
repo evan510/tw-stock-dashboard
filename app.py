@@ -323,9 +323,8 @@ def _save_api_key_to_env(new_key: str) -> bool:
 
 with st.sidebar.expander("🤖 Gemini AI 設定", expanded=(not bool(current_api_key))):
     if current_api_key:
-        # 僅顯示狀態燈，不顯示 Key 內容
-        key_preview = f"...{current_api_key[-6:]}" if len(current_api_key) > 6 else "已設定"
-        st.success(f"🟢 Gemini API 已連線就緒（尾碼 `{key_preview}`）")
+        st.success("🟢 Gemini API 已連線就緒")
+        st.caption("🔒 金鑰已安全封存於程式底層 (.env)，前端畫面不對外顯示，他人無法取用。")
     else:
         st.warning("🟡 尚未設定 Gemini API Key，請輸入後按下儲存")
 
@@ -334,25 +333,28 @@ with st.sidebar.expander("🤖 Gemini AI 設定", expanded=(not bool(current_api
         "輸入新的 Gemini API Key：",
         value="",
         type="password",
-        placeholder="貼上 API Key 後按儲存，不會顯示在畫面上",
-        help="Key 將加密儲存於程式底層 .env 檔，重啟後自動載入，不會出現在前端。"
+        placeholder="在此貼上 API Key（輸入後點擊 SAVE）...",
+        help="Key 將安全儲存於程式底層 .env 檔，儲存後前端自動隱藏。"
     )
-    if st.button("💾 儲存 API Key", key="btn_save_api_key", use_container_width=True):
-        _key_to_save = _new_key_input.strip()
-        if _key_to_save:
-            if _save_api_key_to_env(_key_to_save):
-                st.success("✅ API Key 已安全儲存！下次啟動將自動載入。")
-                st.rerun()
+    col_save, col_clear = st.columns([1, 1])
+    with col_save:
+        if st.button("💾 SAVE (儲存)", key="btn_save_api_key", type="primary", use_container_width=True):
+            _key_to_save = _new_key_input.strip()
+            if _key_to_save:
+                if gemini_engine.save_api_key(_key_to_save):
+                    st.toast("✅ API Key 已安全存入底層記錄！", icon="💾")
+                    st.rerun()
+                else:
+                    st.error("儲存失敗，請確認程式目錄有寫入權限。")
             else:
-                st.error("儲存失敗，請確認程式目錄有寫入權限。")
-        else:
-            st.warning("請先貼上 API Key 再點儲存。")
+                st.warning("請先輸入 API Key 再點 SAVE。")
 
-    # 清除功能（可選）
-    if current_api_key:
-        if st.button("🗑️ 清除已儲存的 API Key", key="btn_clear_api_key", use_container_width=True, type="secondary"):
-            _save_api_key_to_env("")
-            st.rerun()
+    with col_clear:
+        if current_api_key:
+            if st.button("🗑️ 清除金鑰", key="btn_clear_api_key", use_container_width=True):
+                gemini_engine.clear_api_key()
+                st.toast("⚠️ 已自系統底層清除金鑰！", icon="🗑️")
+                st.rerun()
 
 
 # YT 分析師頻道自訂管理

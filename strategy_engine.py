@@ -725,3 +725,177 @@ def get_short_term_catalyst_picks(limit=30):
             
     results.sort(key=lambda x: x['short_score'], reverse=True)
     return results[:limit]
+
+@st.cache_data(ttl=900, show_spinner=False)
+def scan_bullish_institutional_breakout_stocks(limit=30):
+    """
+    👑 主力剛開始進場＋技術面多頭排列強勢波段選股
+    量化檢核標準：
+    1. 籌碼面：三大法人（外資＋投信）近 3 個交易日連續同步買超 (外資>0 且 投信>0)。
+    2. 技術面：今日收盤價 > 5MA > 20MA(月線) > 60MA(季線)，標準多頭發散排列。
+    3. 量能面：今日成交量 >= 20日均量的 1.5 倍（實質爆量進駐）。
+    4. 風險過濾：近 20 日平均成交量 >= 1,000 張 (過濾冷門殭屍股)。
+    """
+    import requests
+    from datetime import datetime, timedelta
+    import yfinance as yf
+
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+    # 1. 取得近 3 個有資料之交易日
+    valid_dates = []
+    for delta in range(12):
+        d = datetime.now() - timedelta(days=delta)
+        if d.weekday() < 5:
+            d_str = d.strftime('%Y%m%d')
+            url = f"https://www.twse.com.tw/rwd/zh/fund/TWT44U?response=json&date={d_str}"
+            try:
+                r = requests.get(url, headers=headers, timeout=4).json()
+                if r.get('stat') == 'OK' and r.get('data'):
+                    valid_dates.append(d_str)
+                    if len(valid_dates) >= 3:
+                        break
+            except Exception:
+                pass
+
+    if len(valid_dates) < 3:
+        return []
+
+    # 2. 獲取近 3 日投信與外資買超明細
+    day_maps = []
+    for d_str in valid_dates:
+        day_data = {}
+        # 投信日報 (TWT44U)
+        try:
+            r_trust = requests.get(f"https://www.twse.com.tw/rwd/zh/fund/TWT44U?response=json&date={d_str}", headers=headers, timeout=5).json()
+            for row in r_trust.get('data', []):
+                sym = str(row[1]).strip()
+                name = str(row[2]).strip()
+                try:
+                    net = int(str(row[5]).replace(',', '').strip())
+                    if net > 0:
+                        day_data.setdefault(sym, {'name': name})['trust'] = net
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+        # 外資日報 (TWT38U)
+        try:
+            r_foreign = requests.get(f"https://www.twse.com.tw/rwd/zh/fund/TWT38U?response=json&date={d_str}", headers=headers, timeout=5).json()
+            for row in r_foreign.get('data', []):
+                sym = str(row[1]).strip()
+                name = str(row[2]).strip()
+                try:
+                    net = int(str(row[5]).replace(',', '').strip())
+                    if net > 0:
+                        day_data.setdefault(sym, {'name': name})['foreign'] = net
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+        day_maps.append(day_data)
+
+    # 3. 找出 3 日外資+投信皆連續買超的股票 (近 3 日每日外資>0 且 投信>0)
+    synced_stocks = {}
+    if len(day_maps) >= 3:
+        for sym, meta in day_maps[0].items():
+            if len(sym) != 4 or not sym.isdigit():
+                continue
+            if meta.get('trust', 0) > 0 and meta.get('foreign', 0) > 0:
+                d2 = day_maps[1].get(sym, {})
+                d3 = day_maps[2].get(sym, {})
+                if d2.get('trust', 0) > 0 and d2.get('foreign', 0) > 0 and d3.get('trust', 0) > 0 and d3.get('foreign', 0) > 0:
+                    tot_trust = meta.get('trust', 0) + d2.get('trust', 0) + d3.get('trust', 0)
+                    tot_foreign = meta.get('foreign', 0) + d2.get('foreign', 0) + d3.get('foreign', 0)
+                    synced_stocks[sym] = {
+                        'name': meta.get('name', ''),
+                        'trust_3d_shares': tot_trust,
+                        'foreign_3d_shares': tot_foreign,
+                        'total_3d_shares': tot_trust + tot_foreign
+                    }
+
+    if not synced_stocks:
+        return []
+
+    # 4. 透過 yfinance 檢核技術面 (5MA > 20MA > 60MA)、量能面 (>=1.5x) 與流動性 (>=1000張)
+    tickers = [f"{s}.TW" for s in synced_stocks.keys()]
+    try:
+        data = yf.download(tickers, period='4mo', progress=False)
+    except Exception:
+        return []
+
+    results = []
+    for sym, meta in synced_stocks.items():
+        ticker = f"{sym}.TW"
+        try:
+            if len(tickers) == 1:
+                df = pd.DataFrame({'Close': data['Close'], 'Volume': data['Volume']}).dropna()
+            else:
+                if ticker not in data['Close']:
+                    continue
+                df = pd.DataFrame({'Close': data['Close'][ticker], 'Volume': data['Volume'][ticker]}).dropna()
+
+            if len(df) < 60:
+                continue
+
+            close = float(df['Close'].iloc[-1])
+            prev_close = float(df['Close'].iloc[-2])
+            pct_change = round(((close - prev_close) / prev_close) * 100, 2)
+
+            ma5 = float(df['Close'].rolling(5).mean().iloc[-1])
+            ma20 = float(df['Close'].rolling(20).mean().iloc[-1])
+            ma60 = float(df['Close'].rolling(60).mean().iloc[-1])
+
+            vol_today = float(df['Volume'].iloc[-1])
+            vol_ma20 = float(df['Volume'].rolling(20).mean().iloc[-1])
+
+            # 檢驗條件 2: 技術面 Close > 5MA > 20MA > 60MA
+            is_bullish_ma = (close > ma5) and (ma5 > ma20) and (ma20 > ma60)
+            if not is_bullish_ma:
+                continue
+
+            # 檢驗條件 3: 量能面 今日量 >= 20日均量 * 1.5
+            is_vol_surge = (vol_today >= vol_ma20 * 1.5)
+            if not is_vol_surge:
+                continue
+
+            # 檢驗條件 4: 流動性過濾 20日均量 >= 1000 張 (1,000,000 股)
+            is_liquid = (vol_ma20 >= 1000 * 1000)
+            if not is_liquid:
+                continue
+
+            vol_ratio = round(vol_today / (vol_ma20 + 1e-9), 2)
+            vol_ma20_k = round(vol_ma20 / 1000, 0)
+            trust_3d_lots = round(meta['trust_3d_shares'] / 1000, 0)
+            foreign_3d_lots = round(meta['foreign_3d_shares'] / 1000, 0)
+
+            # 短線防守停損價 (老王紀律: 跌破 20MA 或 近 5 日低點，約 -3.5% ~ -5%)
+            stop_loss = round(max(ma20 * 0.985, close * 0.95), 2)
+            target1 = round(close * 1.07, 2)  # 第一短線目標 +7%
+            target2 = round(close * 1.18, 2)  # 第二波段目標 +18%
+
+            results.append({
+                'symbol': sym,
+                'name': meta['name'],
+                'close': close,
+                'pct_change': pct_change,
+                'ma5': round(ma5, 2),
+                'ma20': round(ma20, 2),
+                'ma60': round(ma60, 2),
+                'vol_ratio': vol_ratio,
+                'vol_ma20_k': int(vol_ma20_k),
+                'trust_3d_lots': int(trust_3d_lots),
+                'foreign_3d_lots': int(foreign_3d_lots),
+                'stop_loss': stop_loss,
+                'target1': target1,
+                'target2': target2,
+                'sparkline': generate_sparkline(df['Close'].iloc[-10:])
+            })
+        except Exception:
+            continue
+
+    # 依放量倍數與漲幅排序
+    results.sort(key=lambda x: (x['vol_ratio'], x['pct_change']), reverse=True)
+    return results[:limit]

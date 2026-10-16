@@ -29,7 +29,8 @@ from strategy_engine import (
     run_ai_deep_analysis,
     analyze_and_rank_pool,
     get_short_term_catalyst_picks,
-    get_intraday_volume_surge_radar
+    get_intraday_volume_surge_radar,
+    scan_bullish_institutional_breakout_stocks
 )
 from custom_pool_manager import load_custom_pool, add_to_custom_pool, remove_from_custom_pool
 from portfolio_manager import load_portfolio, add_holding, remove_holding, evaluate_holdings
@@ -523,194 +524,6 @@ if menu == "🎙️ 0. 今日作戰指揮室 (YT+論壇+AI結論)":
             </div>
             """, unsafe_allow_html=True)
 
-    st_tab1, st_tab2, st_tab3, st_tab4 = st.tabs([
-        "🎯 模組 A：短線 5~20% 點位狙擊榜",
-        "📰 模組 B：即時題材催化劑新聞",
-        "💰 模組 C：法人連續買超鎖碼明細",
-        "⚡ 模組 D：盤中早盤起漲與預估爆量雷達"
-    ])
-
-    with st_tab1:
-        st.subheader("🎯 短線 5% ~ 20% 高勝率精準進出場點位榜")
-        st.caption("依據 3~5 日投信鎖碼、多頭排列與量價發動結構自動試算：嚴格停損 (約 -3.5%)、第一目標 (+7%)、波段目標 (+18%)")
-        with st.spinner("正在掃描法人連續加碼、生技題材與妖股異動標的..."):
-            picks = get_short_term_catalyst_picks(limit=30)
-
-        if picks:
-            # 頂部統計指標
-            top_c1, top_c2, top_c3, top_c4 = st.columns(4)
-            top_c1.metric("🎯 狙擊標的掃描", f"{len(picks)} 檔")
-            avg_score = round(sum(x.get('short_score', 60) for x in picks) / len(picks), 1)
-            top_c2.metric("⭐ 平均短線動能評分", f"{avg_score} 分")
-            buy_signal_c = sum(1 for x in picks if "買進" in x.get('action_signal', '買進'))
-            top_c3.metric("🟢 買進訊號燈", f"{buy_signal_c} 檔")
-            streak_3d_count = sum(1 for x in picks if x.get('streak_days', 1) >= 2 or "生技" in x.get('streak_type', ''))
-            top_c4.metric("🔥 鎖碼/強勢題材", f"{streak_3d_count} 檔")
-
-            st.markdown("#### 🔥 前 10 大短線精選核心卡片")
-            top10 = picks[:10]
-            # 每列呈現 2 張大卡片，手機上自然垂直排列，寬螢幕兩欄清晰大器
-            for row_i in range(0, len(top10), 2):
-                c_cols = st.columns(2)
-                for col_j in range(2):
-                    if row_i + col_j < len(top10):
-                        p = top10[row_i + col_j]
-                        with c_cols[col_j]:
-                            act_sig = p.get('action_signal', '🟢 建議買進')
-                            pill_light = "pill-buy" if "買進" in act_sig else ("pill-hot" if "賣出" in act_sig else "pill-warn")
-                            st.markdown(f"""
-                            <div class="rwd-card">
-                                <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <div>
-                                        <h3 style="margin:0;">{p['name']} <span style="font-size:0.9rem; color:gray;">({p['symbol']})</span></h3>
-                                        <span class="pill {pill_light}">{act_sig}</span>
-                                        <span class="pill pill-blue">{p.get('streak_type', '短線動能')}</span>
-                                    </div>
-                                    <div style="text-align:right;">
-                                        <h2 style="margin:0; color:#ef4444;">${p['close']} <span style="font-size:0.95rem;">{p['pct_change']:+}%</span></h2>
-                                        <span style="font-size:0.85rem; color:#60a5fa; font-weight:700;">評分: {p.get('short_score', 60)} 分</span>
-                                    </div>
-                                </div>
-                                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px; margin:8px 0;">
-                                    <span style="font-size:0.82rem; color:#60a5fa;">🎯 <b>型態</b>：{p.get('trigger_type', '蓄勢')}</span> ｜ 
-                                    <span style="font-size:0.82rem; color:#cbd5e1;">📊 <b>量能</b>：均量 <b>{p.get('vol_ratio', 1.0)}x</b></span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-top:6px;">
-                                    <span style="color:#f87171;">🛑 <b>防守停損</b>：${p['stop_loss']} ({p.get('stop_loss_pct', -3.5)}%)</span>
-                                    <span style="color:#4ade80;">🎯 <b>T1 目標 (+7%)</b>：${p['target1']}</span>
-                                    <span style="color:#fbbf24;">🚀 <b>T2 波段 (+18%)</b>：${p['target2']}</span>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-            st.markdown("---")
-            st.markdown("#### 📋 短線 5% ~ 20% 狙擊總榜單 Top 30 (含近10日走勢火花線)")
-            df_picks = pd.DataFrame([
-                {
-                    '操作燈號': x.get('action_signal', '🟢 建議買進'),
-                    '代號': x['symbol'],
-                    '名稱': x['name'],
-                    '現價': x['close'],
-                    '漲跌幅': f"{x['pct_change']:+}%",
-                    '10日走勢': x.get('sparkline', '───'),
-                    '短線評分': x.get('short_score', 60),
-                    '籌碼與題材特徵': f"{x.get('streak_type', '短線動能')} ({x.get('streak_days', 1)}日)",
-                    '量能倍數': f"{x.get('vol_ratio', 1.0)}x",
-                    '短線發動型態': x.get('trigger_type', '蓄勢'),
-                    '🛑 防守停損價': f"${x['stop_loss']} ({x.get('stop_loss_pct', -3.5)}%)",
-                    '🎯 T1 短線目標(+7%)': f"${x['target1']}",
-                    '🚀 T2 波段目標(+18%)': f"${x['target2']}",
-                    '盈虧比 (R/R)': f"{x.get('reward_t1', 2.0)} : 1"
-                } for x in picks
-            ])
-            st.dataframe(df_picks, use_container_width=True)
-        else:
-            st.info("今日全市場暫無符合短線狙擊條件之標的，建議短線多看少做，保留現金！")
-
-    with st_tab2:
-        st.subheader("📰 全市場即時重大題材催化劑焦點新聞")
-        st.caption("支援依照台灣主流核心題材分類篩選，掌握第一手利多催化與政策行情")
-        
-        c_news_sel, c_news_btn = st.columns([4, 1])
-        with c_news_sel:
-            news_category = st.selectbox(
-                "🇹🇼 選擇題材分類：",
-                [
-                    "全部題材",
-                    "CPO 矽光子 / CoWoS",
-                    "水冷散熱 / AI 伺服器",
-                    "重電綠能 / 強韌電網",
-                    "生技新藥 / 拆股授權",
-                    "無人機 / 國防軍工",
-                    "營收新高 / 法人雙增"
-                ],
-                key="catalyst_theme_sel"
-            )
-        with c_news_btn:
-            st.write("")
-            st.write("")
-            if st.button("🔄 刷新題材新聞", key="btn_refresh_news", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
-
-        with st.spinner(f"正在搜尋『{news_category}』最新重大催化新聞..."):
-            cat_news = scan_theme_catalyst_news(theme_category=news_category, max_news=10)
-
-        if cat_news:
-            for item in cat_news:
-                st.markdown(f"""
-                <div class="rwd-card" style="padding:12px 16px; margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="pill pill-blue">🔥 題材：{item['tag']}</span>
-                        <small style="color:gray;">{item['date']}</small>
-                    </div>
-                    <h4 style="margin:6px 0;"><a href="{item['link']}" target="_blank" style="text-decoration:none; color:#f1f5f9;">{item['title']}</a></h4>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info(f"『{news_category}』暫無最新重大新聞，可點擊上方按鈕重新整理。")
-
-    with st_tab3:
-        st.subheader("💰 證交所官方盤後法人連續買超名單")
-        st.caption("即時統計證交所盤後投信連買天數與單日急敲買超張數，掌握大戶鎖碼軌跡")
-        streak_data = get_institutional_streak_stocks(limit=30)
-        if streak_data:
-            df_streak = pd.DataFrame([
-                {
-                    '代號': sym,
-                    '名稱': info['name'],
-                    '連買天數': f"{info['streak_days']} 天",
-                    '最新單日買超(張)': f"{info['latest_buy_vol']:,}",
-                    '累計連買總張數': f"{info['total_streak_vol']:,}",
-                    '法人特徵': info['streak_type']
-                } for sym, info in streak_data.items()
-            ])
-            st.dataframe(df_streak, use_container_width=True)
-        else:
-            st.info("連線證交所資料讀取中，請稍候點擊下方同步刷新數據。")
-
-    with st_tab4:
-        st.subheader("⚡ 盤中早盤預估成交量起漲雷達 (09:15 突擊)")
-        st.caption("動態時間權重換算今日全日預估成交量：鎖定【預估爆量 >= 1.35x 均量】且【漲幅 +1.5% ~ +6.5%】起漲表態點")
-        with st.spinner("掃描全市場盤中即時爆量起漲標的中..."):
-            intraday_picks = get_intraday_volume_surge_radar(limit=20)
-            
-        if intraday_picks:
-            st.markdown(f"**⚡ 今日早盤預估爆量起漲焦點：共 {len(intraday_picks)} 檔**")
-            
-            c_cards = intraday_picks[:4]
-            cols_intra = st.columns(len(c_cards))
-            for i, p_item in enumerate(c_cards):
-                with cols_intra[i]:
-                    st.markdown(f"""
-                    <div class="rwd-card" style="border-top: 3px solid #f59e0b;">
-                        <h4 style="margin:0;">{p_item['name']} <small style="color:gray;">({p_item['symbol']})</small></h4>
-                        <h2 style="margin:6px 0; color:#ef4444;">${p_item['close']} <span style="font-size:1rem;">{p_item['pct_change']:+}%</span></h2>
-                        <span class="pill pill-gold">預估量能：{p_item['projected_vol_ratio']} 倍</span>
-                        <div style="margin-top:8px; font-size:0.8rem; color:#94a3b8;">
-                            {p_item['entry_advice']}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-            st.markdown("---")
-            df_intra = pd.DataFrame([
-                {
-                    '訊號特徵': x['surge_signal'],
-                    '代號': x['symbol'],
-                    '名稱': x['name'],
-                    '現價': x['close'],
-                    '當前漲跌幅': f"{x['pct_change']:+}%",
-                    '預估全天量能倍數': f"{x['projected_vol_ratio']} 倍",
-                    '當前累積成交量': f"{int(x['cur_vol']):,} 股",
-                    '全天預估成交量': f"{int(x['projected_vol']):,} 股",
-                    '操盤建議': x['entry_advice']
-                } for x in intraday_picks
-            ])
-            st.dataframe(df_intra, use_container_width=True)
-        else:
-            st.info("目前盤中無顯著預估爆量起漲個股，或處於休市時段。")
-
 # ================= 頁面 1：個股快速診斷 (AI燈號+K線+籌碼) =================
 elif menu == "🩺 1. 個股快速診斷 (AI燈號+K線+籌碼)":
     st.title("🩺 個股快速診斷 (AI 多空燈號 + K線 + 籌碼)")
@@ -978,15 +791,275 @@ elif menu == "🚀 2. 短線狙擊榜 (法人連買+題材催化)":
     </div>
     """, unsafe_allow_html=True)
 
-    st2_tab1, st2_tab2, st2_tab3, st2_tab4 = st.tabs([
+    st2_tab1, st2_tab2, st2_tab3, st2_tab4, st2_tab5 = st.tabs([
         "🎯 模組 A：短線 5~20% 點位狙擊榜",
+        "👑 模組 E：主力進場多頭排列波段榜",
         "📰 模組 B：即時題材催化劑新聞",
         "💰 模組 C：法人連續買超鎖碼明細",
         "⚡ 模組 D：盤中早盤起漲與預估爆量雷達"
     ])
 
-    
-    with tab1:
+    with st2_tab1:
+        st.subheader("🎯 短線 5% ~ 20% 高勝率精準進出場點位榜")
+        st.caption("依據 3~5 日投信鎖碼、多頭排列與量價發動結構自動試算：嚴格停損 (約 -3.5%)、第一目標 (+7%)、波段目標 (+18%)")
+        with st.spinner("正在掃描法人連續加碼、生技題材與妖股異動標的..."):
+            picks = get_short_term_catalyst_picks(limit=30)
+
+        if picks:
+            top_c1, top_c2, top_c3, top_c4 = st.columns(4)
+            top_c1.metric("🎯 狙擊標的掃描", f"{len(picks)} 檔")
+            avg_score = round(sum(x.get('short_score', 60) for x in picks) / len(picks), 1)
+            top_c2.metric("⭐ 平均短線動能評分", f"{avg_score} 分")
+            buy_signal_c = sum(1 for x in picks if "買進" in x.get('action_signal', '買進'))
+            top_c3.metric("🟢 買進訊號燈", f"{buy_signal_c} 檔")
+            streak_3d_count = sum(1 for x in picks if x.get('streak_days', 1) >= 2 or "生技" in x.get('streak_type', ''))
+            top_c4.metric("🔥 鎖碼/強勢題材", f"{streak_3d_count} 檔")
+
+            st.markdown("#### 🔥 前 10 大短線精選核心卡片")
+            top10 = picks[:10]
+            for row_i in range(0, len(top10), 2):
+                c_cols = st.columns(2)
+                for col_j in range(2):
+                    if row_i + col_j < len(top10):
+                        p = top10[row_i + col_j]
+                        with c_cols[col_j]:
+                            act_sig = p.get('action_signal', '🟢 建議買進')
+                            pill_light = "pill-buy" if "買進" in act_sig else ("pill-hot" if "賣出" in act_sig else "pill-warn")
+                            st.markdown(f"""
+                            <div class="rwd-card">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <h3 style="margin:0;">{p['name']} <span style="font-size:0.9rem; color:gray;">({p['symbol']})</span></h3>
+                                        <span class="pill {pill_light}">{act_sig}</span>
+                                        <span class="pill pill-blue">{p.get('streak_type', '短線動能')}</span>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        <h2 style="margin:0; color:#ef4444;">${p['close']} <span style="font-size:0.95rem;">{p['pct_change']:+}%</span></h2>
+                                        <span style="font-size:0.85rem; color:#60a5fa; font-weight:700;">評分: {p.get('short_score', 60)} 分</span>
+                                    </div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px; margin:8px 0;">
+                                    <span style="font-size:0.82rem; color:#60a5fa;">🎯 <b>型態</b>：{p.get('trigger_type', '蓄勢')}</span> ｜ 
+                                    <span style="font-size:0.82rem; color:#cbd5e1;">📊 <b>量能</b>：均量 <b>{p.get('vol_ratio', 1.0)}x</b></span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-top:6px;">
+                                    <span style="color:#f87171;">🛑 <b>防守停損</b>：${p['stop_loss']} ({p.get('stop_loss_pct', -3.5)}%)</span>
+                                    <span style="color:#4ade80;">🎯 <b>T1 目標 (+7%)</b>：${p['target1']}</span>
+                                    <span style="color:#fbbf24;">🚀 <b>T2 波段 (+18%)</b>：${p['target2']}</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### 📋 短線 5% ~ 20% 狙擊總榜單 Top 30 (含近10日走勢火花線)")
+            df_picks = pd.DataFrame([
+                {
+                    '操作燈號': x.get('action_signal', '🟢 建議買進'),
+                    '代號': x['symbol'],
+                    '名稱': x['name'],
+                    '現價': x['close'],
+                    '漲跌幅': f"{x['pct_change']:+}%",
+                    '10日走勢': x.get('sparkline', '───'),
+                    '短線評分': x.get('short_score', 60),
+                    '籌碼與題材特徵': f"{x.get('streak_type', '短線動能')} ({x.get('streak_days', 1)}日)",
+                    '量能倍數': f"{x.get('vol_ratio', 1.0)}x",
+                    '短線發動型態': x.get('trigger_type', '蓄勢'),
+                    '🛑 防守停損價': f"${x['stop_loss']} ({x.get('stop_loss_pct', -3.5)}%)",
+                    '🎯 T1 短線目標(+7%)': f"${x['target1']}",
+                    '🚀 T2 波段目標(+18%)': f"${x['target2']}",
+                    '盈虧比 (R/R)': f"{x.get('reward_t1', 2.0)} : 1"
+                } for x in picks
+            ])
+            st.dataframe(df_picks, use_container_width=True)
+        else:
+            st.info("今日全市場暫無符合短線狙擊條件之標的，建議短線多看少做，保留現金！")
+
+    with st2_tab2:
+        st.subheader("👑 主力進場多頭排列強勢波段榜 (量化篩選)")
+        st.markdown("""
+        <div style="background:rgba(34,197,94,0.08); border-left:4px solid #22c55e; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
+            <b>📌 嚴格 4 大量化篩選邏輯：</b><br>
+            1. <b>籌碼面</b>：外資 ＋ 投信三大法人近 3 個交易日<b>連續同步買超</b>。<br>
+            2. <b>技術面</b>：收盤價同時高於 5MA、20MA(月線)、60MA(季線)，且呈現<b>強烈多頭排列 (Close > 5MA > 20MA > 60MA)</b>。<br>
+            3. <b>量能面</b>：今日成交量達 20 日均量的 <b>1.5 倍以上</b>（主力爆量進駐表態）。<br>
+            4. <b>流動性防守</b>：20 日平均成交量達 <b>1,000 張以上</b>，徹底排除流動性風險殭屍股。
+        </div>
+        """, unsafe_allow_html=True)
+        with st.spinner("正在連線證交所與大盤資料庫，進行全市場主力連買與多頭排列量化計算中..."):
+            quant_picks = scan_bullish_institutional_breakout_stocks(limit=30)
+
+        if quant_picks:
+            st.success(f"🎉 成功篩選出 **{len(quant_picks)}** 檔符合【主力連續進場＋技術多頭排列＋量能突破】強勢波段股！")
+            
+            qp_c1, qp_c2, qp_c3, qp_c4 = st.columns(4)
+            qp_c1.metric("👑 波段入選標的", f"{len(quant_picks)} 檔")
+            avg_vol_r = round(sum(x.get('vol_ratio', 1.5) for x in quant_picks) / len(quant_picks), 2)
+            qp_c2.metric("📊 平均量能放大", f"{avg_vol_r}x 倍")
+            total_inst_3d = sum(x.get('inst_streak_days', 3) for x in quant_picks)
+            qp_c3.metric("🤝 外資投信同步", f"連續 3 日買超")
+            qp_c4.metric("🛡️ 均線結構", "萬里無雲多頭排列")
+
+            st.markdown("#### 🔥 主力進場強勢焦點精選卡片")
+            for q_row in range(0, min(6, len(quant_picks)), 2):
+                q_cols = st.columns(2)
+                for q_col_idx in range(2):
+                    if q_row + q_col_idx < len(quant_picks):
+                        item = quant_picks[q_row + q_col_idx]
+                        with q_cols[q_col_idx]:
+                            st.markdown(f"""
+                            <div class="rwd-card" style="border-left: 5px solid #22c55e;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <h3 style="margin:0;">{item['name']} <span style="font-size:0.9rem; color:gray;">({item['symbol']})</span></h3>
+                                        <span class="pill pill-buy">🟢 {item['signal']}</span>
+                                        <span class="pill pill-gold">{item['inst_streak']}</span>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        <h2 style="margin:0; color:#ef4444;">${item['close']} <span style="font-size:0.95rem;">{item['pct_change']:+}%</span></h2>
+                                        <span style="font-size:0.85rem; color:#4ade80; font-weight:700;">量能: {item['vol_ratio']}x 倍</span>
+                                    </div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px; margin:8px 0; font-size:0.83rem;">
+                                    <span style="color:#60a5fa;">📐 <b>5MA:</b> ${item['ma5']}</span> ｜ 
+                                    <span style="color:#a855f7;"><b>20MA:</b> ${item['ma20']}</span> ｜ 
+                                    <span style="color:#22c55e;"><b>60MA:</b> ${item['ma60']}</span> ｜ 
+                                    <span style="color:#cbd5e1;"><b>20日均量:</b> {item['ma20_vol_lots']:,} 張</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-top:6px;">
+                                    <span style="color:#f87171;">🛑 <b>防守停損(破月線)</b>：${item['stop_loss']}</span>
+                                    <span style="color:#4ade80;">🎯 <b>T1 目標 (+7%)</b>：${item['target1']}</span>
+                                    <span style="color:#fbbf24;">🚀 <b>T2 波段 (+18%)</b>：${item['target2']}</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### 📋 主力剛進場多頭排列詳細量化清單")
+            df_quant_display = pd.DataFrame([
+                {
+                    '代號': x['symbol'],
+                    '名稱': x['name'],
+                    '現價': x['close'],
+                    '漲跌幅': f"{x['pct_change']:+}%",
+                    '籌碼條件': x['inst_streak'],
+                    '量能放大倍數': f"{x['vol_ratio']}x 倍",
+                    '20日均量(張)': f"{x['ma20_vol_lots']:,}",
+                    '5日線(5MA)': x['ma5'],
+                    '月線(20MA)': x['ma20'],
+                    '季線(60MA)': x['ma60'],
+                    '建議防守(停損)': f"${x['stop_loss']}",
+                    'T1 目標(+7%)': f"${x['target1']}",
+                    'T2 目標(+18%)': f"${x['target2']}"
+                } for x in quant_picks
+            ])
+            st.dataframe(df_quant_display, use_container_width=True)
+        else:
+            st.info("💡 今日全市場暫無同時完全符合「三大法人連3日同步買超＋5/20/60MA多頭排列＋爆量1.5倍」之標的，建議維持耐心，等待最佳量化切入點！")
+
+    with st2_tab3:
+        st.subheader("📰 全市場即時重大題材催化劑焦點新聞")
+        st.caption("支援依照台灣主流核心題材分類篩選，掌握第一手利多催化與政策行情")
+        
+        c_news_sel, c_news_btn = st.columns([4, 1])
+        with c_news_sel:
+            news_category = st.selectbox(
+                "🇹🇼 選擇題材分類：",
+                [
+                    "全部題材",
+                    "CPO 矽光子 / CoWoS",
+                    "水冷散熱 / AI 伺服器",
+                    "重電綠能 / 強韌電網",
+                    "生技新藥 / 拆股授權",
+                    "無人機 / 國防軍工",
+                    "營收新高 / 法人雙增"
+                ],
+                key="catalyst_theme_sel_p2"
+            )
+        with c_news_btn:
+            st.write("")
+            st.write("")
+            if st.button("🔄 刷新題材新聞", key="btn_refresh_news_p2", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+
+        with st.spinner(f"正在搜尋『{news_category}』最新重大催化新聞..."):
+            cat_news = scan_theme_catalyst_news(theme_category=news_category, max_news=10)
+
+        if cat_news:
+            for item in cat_news:
+                st.markdown(f"""
+                <div class="rwd-card" style="padding:12px 16px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="pill pill-blue">🔥 題材：{item['tag']}</span>
+                        <small style="color:gray;">{item['date']}</small>
+                    </div>
+                    <h4 style="margin:6px 0;"><a href="{item['link']}" target="_blank" style="text-decoration:none; color:#f1f5f9;">{item['title']}</a></h4>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info(f"『{news_category}』暫無最新重大新聞，可點擊上方按鈕重新整理。")
+
+    with st2_tab4:
+        st.subheader("💰 證交所官方盤後法人連續買超名單")
+        st.caption("即時統計證交所盤後投信連買天數與單日急敲買超張數，掌握大戶鎖碼軌跡")
+        streak_data = get_institutional_streak_stocks(limit=30)
+        if streak_data:
+            df_streak = pd.DataFrame([
+                {
+                    '代號': sym,
+                    '名稱': info['name'],
+                    '連買天數': f"{info['streak_days']} 天",
+                    '最新單日買超(張)': f"{info['latest_buy_vol']:,}",
+                    '累計連買總張數': f"{info['total_streak_vol']:,}",
+                    '法人特徵': info['streak_type']
+                } for sym, info in streak_data.items()
+            ])
+            st.dataframe(df_streak, use_container_width=True)
+        else:
+            st.info("連線證交所資料讀取中，請稍候點擊下方同步刷新數據。")
+
+    with st2_tab5:
+        st.subheader("⚡ 盤中早盤預估成交量起漲雷達 (09:15 突擊)")
+        st.caption("動態時間權重換算今日全日預估成交量：鎖定【預估爆量 >= 1.35x 均量】且【漲幅 +1.5% ~ +6.5%】起漲表態點")
+        with st.spinner("掃描全市場盤中即時爆量起漲標的中..."):
+            intraday_picks = get_intraday_volume_surge_radar(limit=20)
+            
+        if intraday_picks:
+            st.markdown(f"**⚡ 今日早盤預估爆量起漲焦點：共 {len(intraday_picks)} 檔**")
+            
+            c_cards = intraday_picks[:4]
+            cols_intra = st.columns(len(c_cards))
+            for i, p_item in enumerate(c_cards):
+                with cols_intra[i]:
+                    st.markdown(f"""
+                    <div class="rwd-card" style="border-top: 3px solid #f59e0b;">
+                        <h4 style="margin:0;">{p_item['name']} <small style="color:gray;">({p_item['symbol']})</small></h4>
+                        <h2 style="margin:6px 0; color:#ef4444;">${p_item['close']} <span style="font-size:1rem;">{p_item['pct_change']:+}%</span></h2>
+                        <span class="pill pill-gold">預估量能：{p_item['projected_vol_ratio']} 倍</span>
+                        <div style="margin-top:8px; font-size:0.8rem; color:#94a3b8;">
+                            {p_item['entry_advice']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+            st.markdown("---")
+            df_intra = pd.DataFrame([
+                {
+                    '訊號特徵': x['surge_signal'],
+                    '代號': x['symbol'],
+                    '名稱': x['name'],
+                    '現價': x['close'],
+                    '當前漲跌幅': f"{x['pct_change']:+}%",
+                    '預估全天量能倍數': f"{x['projected_vol_ratio']} 倍",
+                    '當前累積成交量': f"{int(x['cur_vol']):,} 股",
+                    '全天預估成交量': f"{int(x['projected_vol']):,} 股",
+                    '操盤建議': x['entry_advice']
+                } for x in intraday_picks
+            ])
+            st.dataframe(df_intra, use_container_width=True)
+        else:
+            st.info("目前盤中無顯著預估爆量起漲個股，或處於休市時段。")
+
         st.subheader("⚡ 全市場即時成交爆量熱門股 Top 30")
         with st.spinner("自動掃描全市場成交額榜單並運算量價結構中..."):
             market_hot = analyze_dynamic_market_hot_stocks(limit=30)
@@ -1095,7 +1168,7 @@ elif menu == "🚀 2. 短線狙擊榜 (法人連買+題材催化)":
         st.dataframe(df_c, use_container_width=True)
 
 # ================= 頁面 3：市場熱點雷達 (大盤評分+爆量榜) =================
-elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)":
+elif menu == "🔥 3. 市場熱點雷達 (大盤評分+爆量榜)":
     st.title("🔥 市場熱點雷達 (大盤評分+爆量榜)")
     st.caption("全市場成交量能掃描：即時掌握市場人氣資金聚集地、突破結構與精選題材池")
     m_regime = calculate_market_regime()
@@ -1633,140 +1706,10 @@ elif menu == "📈 8. 互動 K 線與指標圖室":
         else:
             st.error(f"查無 {real_name} ({real_sym}) 之歷史量價數據。")
 
-# ================= 頁面 9：我的持股管家 (庫存+風險警報) =================
-elif menu == "💼 9. 庫存管家與防守警報 (含Line通知)":
+# ================= 頁面 4：我的持股管家 (庫存+風險警報) =================
+elif menu == "💼 4. 我的持股管家 (庫存+風險警報)":
     st.title("💼 我的持股管家 (庫存 + 即時風險警報)")
     
-    # 雲端自動推播狀態與進階設定區塊
-    with st.container():
-        alert_cfg = load_alert_settings()
-        today_is_trade, trade_desc = is_tw_trading_day()
-        trade_status_badge = "🟢 今日開盤" if today_is_trade else f"🔴 今日休市 ({trade_desc})"
-
-        # 頂部狀態卡片
-        st.markdown(f"""
-        <div class="rwd-card" style="border-left: 5px solid #22c55e; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:1.3rem;">⚡</span>
-                    <span style="font-size:1.05rem; font-weight:700; color:#f8fafc;">LINE 雲端定時推播服務 (由 GitHub Actions 託管)</span>
-                </div>
-                <div>
-                    <span class="pill pill-buy">🟢 雲端排程全時待命中</span>
-                    <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1;">{trade_status_badge}</span>
-                </div>
-            </div>
-            <p style="font-size:0.86rem; color:#94a3b8; margin:8px 0 6px 0;">
-                即使關閉電腦或瀏覽器，GitHub Actions 伺服器亦將在營業日依時段準時推播至您的手機 LINE，不受網頁休眠限制。
-            </p>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size:0.84rem; color:#cbd5e1; margin-top:8px;">
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">☀️ <b>08:30</b> 晨間早盤夜盤風向</div>
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">⚡ <b>09:30</b> 早盤起漲爆量雷達</div>
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">🚀 <b>15:30</b> 盤後三大法人精選榜</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 外部精準 Webhook 方案推薦卡片 (解決 GitHub 排程塞車)
-        with st.expander("⚡ 終極抗延遲方案：如何解決 GitHub 免費排程塞車延遲？(推薦設定)", expanded=False):
-            st.markdown("""
-            **❓ 為什麼有時候 08:30 沒有準時收到？**
-            * GitHub Actions 內建的 `schedule: cron` 排程在全球尖峰時刻（如亞洲開盤的早晨）常會被 GitHub 免費伺服器延遲 1~3 小時。
-            * 但只要是 **外部呼叫觸發 (`workflow_dispatch`)**，GitHub 伺服器保證在 **30 秒內秒級啟動**！
-            
-            **🚀 零成本徹底解決方案 (3 分鐘完成設定)：**
-            1. 前往免費排程網站 **[cron-job.org](https://cron-job.org/)** 註冊一個免費帳號。
-            2. 新增 3 個 Cronjob（分別設定為週一到週五的 08:28、09:28、15:28 台灣時間）：
-               - **URL 網址**：`https://api.github.com/repos/evan510/tw-stock-dashboard/actions/workflows/scheduled_push.yml/dispatches`
-               - **Request Method**：`POST`
-               - **Headers**：
-                 - `Authorization: Bearer <您的 GitHub Personal Access Token>`
-                 - `Accept: application/vnd.github.v3+json`
-                 - `User-Agent: CronJob-Client`
-               - **Body (JSON)**：`{"ref": "main"}`
-            3. 這樣一來，每天時間一到，外部伺服器會立即發送 API 命令，GitHub Actions 將會**一秒不差立刻啟動並推播到您的手機 LINE**！
-            """)
-
-        # 快速操作與 GitHub 跳轉
-        act_col1, act_col2 = st.columns([1, 1])
-        with act_col1:
-            st.link_button(
-                "🌐 前往 GitHub Actions 查看排程日誌 / 雲端手動觸發",
-                url="https://github.com/evan510/tw-stock-dashboard/actions",
-                use_container_width=True
-            )
-        with act_col2:
-            st.link_button(
-                "🔑 設定 GitHub Repository Secrets (LINE Token 密鑰)",
-                url="https://github.com/evan510/tw-stock-dashboard/settings/secrets/actions",
-                use_container_width=True
-            )
-
-        # 立即手動測試 3 大快報推播效果
-        st.markdown("##### 🧪 立即手動測試推播效果（發送到您的手機 LINE）")
-        t_c1, t_c2, t_c3 = st.columns(3)
-        if t_c1.button("☀️ 測試 08:30 晨間快報", use_container_width=True):
-            radar = get_night_session_radar()
-            ok, msg = send_morning_market_digest(radar)
-            if ok: st.success("已發送 08:30 晨間快報至手機 LINE！")
-            else: st.error(msg)
-            
-        if t_c2.button("⚡ 測試 09:30 早盤起漲", use_container_width=True):
-            surge_picks = get_intraday_volume_surge_radar(limit=5)
-            ok, msg = send_intraday_surge_digest(surge_picks)
-            if ok: st.success("已發送 09:30 早盤起漲雷達至手機 LINE！")
-            else: st.error(msg)
-
-        if t_c3.button("🚀 測試 15:30 盤後精選", use_container_width=True):
-            picks_for_line = get_short_term_catalyst_picks(limit=5)
-            regime_for_line = calculate_market_regime()
-            ok, msg = send_daily_market_summary(picks_for_line, regime_for_line)
-            if ok: st.success("已發送 15:30 盤後精選快報至手機 LINE！")
-            else: st.error(msg)
-
-        # 將複雜設定收納入折疊選單
-        with st.expander("⚙️ 本機推播金鑰與排程自訂開關（進階設定）", expanded=False):
-            st.caption("提示：若您已在 GitHub Secrets 填寫 `LINE_CHANNEL_TOKEN` 與 `LINE_USER_ID`，雲端排程會自動採用。此處供本機看盤時設定使用。")
-            n_c1, n_c2 = st.columns(2)
-            line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password")
-            line_user_id = n_c2.text_input("LINE User ID：", value=alert_cfg.get("line_user_id", ""), type="password")
-            webhook_url = st.text_input("備用 Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
-            
-            st.markdown("##### ⏰ 排程推播時段開關")
-            sch_c1, sch_c2, sch_c3 = st.columns(3)
-            enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", True))
-            enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True))
-            enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True))
-
-            only_trading_days = st.checkbox(
-                "🚫 台股無交易日（休市/週末/國定假日）不發送推播",
-                value=alert_cfg.get("only_on_trading_days", True)
-            )
-            enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
-
-            btn_save_alert, btn_test_conn = st.columns(2)
-            if btn_save_alert.button("💾 儲存本機通知設定", use_container_width=True):
-                alert_cfg["line_channel_token"] = line_channel_token.strip()
-                alert_cfg["line_user_id"] = line_user_id.strip()
-                alert_cfg["webhook_url"] = webhook_url.strip()
-                alert_cfg["enable_schedule_0830"] = enable_0830
-                alert_cfg["enable_schedule_0930"] = enable_0930
-                alert_cfg["enable_schedule_1530"] = enable_1530
-                alert_cfg["only_on_trading_days"] = only_trading_days
-                alert_cfg["enable_stop_loss_alert"] = enable_stop
-                save_alert_settings(alert_cfg)
-                st.success("本機通知設定已成功儲存！")
-
-            if btn_test_conn.button("📲 測試連線金鑰", use_container_width=True):
-                ok, msg = send_line_messaging_api(
-                    "【台股戰情室 v4.5.0】LINE 連線測試正常！✅",
-                    channel_access_token=line_channel_token.strip(),
-                    user_id=line_user_id.strip()
-                )
-                if ok: st.success(msg)
-                else: st.error(f"連線失敗：{msg}")
-                
-    st.markdown("---")
     with st.expander("➕ 新增持股 / ETF 記錄", expanded=False):
         c1, c2, c3, c4 = st.columns(4)
         n_sym = c1.text_input("代號或名稱 (如 00878, 6467, 泰合)")
@@ -1822,25 +1765,137 @@ elif menu == "💼 9. 庫存管家與防守警報 (含Line通知)":
     else:
         st.info("目前無持股記錄，點擊上方展開表單新增！")
 
-# ================= 頁面 10：通知設定 (LINE推播) =================
-elif menu == "📖 10. 短線與波段操盤心法":
+# ================= 頁面 5：通知設定 (LINE推播) =================
+elif menu == "⚙️ 5. 通知設定 (LINE推播)":
     st.title("⚙️ 通知設定 (LINE 推播與雲端排程)")
-    st.markdown("""
-    ### 🎯 【短線放量突破實戰檢核單】
-    1. **大盤環境**：加權指數環境評分必須 >= 40 分，空頭環境全域禁止開倉。
-    2. **超額強度 (RS)**：個股近 20 日表現必須強於大盤 (RS > 0)，只打強勢領頭羊。
-    3. **型態確認**：帶量突破 20 日最高點（均量 1.5 倍以上），或於前高 2.5% 內窄幅量縮蓄勢。
-    4. **嚴禁追高 (Too Extended)**：單日急漲超過 +7% 或偏離前高超標者，嚴禁追價！
+    st.caption("管理 GitHub Actions 雲端排程定時推播、LINE Messaging API 密鑰與手動即時測試")
     
-    ---
-    ### 👑 【老王均線最高指導原則】
-    * **萬里無雲 (三陽開泰)**：站穩 5MA、10MA、20MA 三線多頭排列，上檔無壓力！
-    * **買黑不買紅**：突破後拉回測試 5MA/10MA 守穩之量縮黑K，才是最高盈虧比買點！
-    * **出場三部曲**：
-      * 跌破 5MA：短線停滯，「先賣一半減碼」！
-      * 跌破 10MA / 20MA：生命線失守，「全數清倉，現金為王」！
-      * 跌破近 20 日大量 K 棒最低點：主力套牢訊號，無條件止損撤退！
-    """)
+    alert_cfg = load_alert_settings()
+    today_is_trade, trade_desc = is_tw_trading_day()
+    trade_status_badge = "🟢 今日開盤" if today_is_trade else f"🔴 今日休市 ({trade_desc})"
+
+    # 頂部狀態卡片（標記排程已暫停）
+    st.markdown(f"""
+    <div class="rwd-card" style="border-left: 5px solid #f59e0b; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.3rem;">⏸️</span>
+                <span style="font-size:1.05rem; font-weight:700; color:#f8fafc;">LINE 雲端定時推播服務 (已依指示暫停)</span>
+            </div>
+            <div>
+                <span class="pill pill-warn">⏸️ 雲端排程已暫停 (避免排程延遲)</span>
+                <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1;">{trade_status_badge}</span>
+            </div>
+        </div>
+        <p style="font-size:0.86rem; color:#94a3b8; margin:8px 0 6px 0;">
+            目前 GitHub Actions 定時排程已關閉，避免雲端伺服器延遲影響看盤體驗。仍可在此隨時使用下方按鈕進行「手動即時測試推播」。
+        </p>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size:0.84rem; color:#cbd5e1; margin-top:8px;">
+            <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">☀️ <b>08:30</b> 晨間早盤夜盤風向 (暫停)</div>
+            <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">⚡ <b>09:30</b> 早盤起漲爆量雷達 (暫停)</div>
+            <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">🚀 <b>15:30</b> 盤後三大法人精選榜 (暫停)</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 外部精準 Webhook 方案推薦卡片 (解決 GitHub 排程塞車)
+    with st.expander("⚡ 終極抗延遲方案：如何解決 GitHub 免費排程塞車延遲？(推薦設定)", expanded=False):
+        st.markdown("""
+        **❓ 為什麼有時候 08:30 沒有準時收到？**
+        * GitHub Actions 內建的 `schedule: cron` 排程在全球尖峰時刻（如亞洲開盤的早晨）常會被 GitHub 免費伺服器延遲 1~3 小時。
+        * 但只要是 **外部呼叫觸發 (`workflow_dispatch`)**，GitHub 伺服器保證在 **30 秒內秒級啟動**！
+        
+        **🚀 零成本徹底解決方案 (3 分鐘完成設定)：**
+        1. 前往免費排程網站 **[cron-job.org](https://cron-job.org/)** 註冊一個免費帳號。
+        2. 新增 3 個 Cronjob（分別設定為週一到週五的 08:28、09:28、15:28 台灣時間）：
+           - **URL 網址**：`https://api.github.com/repos/evan510/tw-stock-dashboard/actions/workflows/scheduled_push.yml/dispatches`
+           - **Request Method**：`POST`
+           - **Headers**：
+             - `Authorization: Bearer <您的 GitHub Personal Access Token>`
+             - `Accept: application/vnd.github.v3+json`
+             - `User-Agent: CronJob-Client`
+           - **Body (JSON)**：`{"ref": "main"}`
+        3. 這樣一來，每天時間一到，外部伺服器會立即發送 API 命令，GitHub Actions 將會**一秒不差立刻啟動並推播到您的手機 LINE**！
+        """)
+
+    # 快速操作與 GitHub 跳轉
+    act_col1, act_col2 = st.columns([1, 1])
+    with act_col1:
+        st.link_button(
+            "🌐 前往 GitHub Actions 查看排程日誌 / 雲端手動觸發",
+            url="https://github.com/evan510/tw-stock-dashboard/actions",
+            use_container_width=True
+        )
+    with act_col2:
+        st.link_button(
+            "🔑 設定 GitHub Repository Secrets (LINE Token 密鑰)",
+            url="https://github.com/evan510/tw-stock-dashboard/settings/secrets/actions",
+            use_container_width=True
+        )
+
+    # 立即手動測試 3 大快報推播效果
+    st.markdown("##### 🧪 立即手動測試推播效果（發送到您的手機 LINE）")
+    t_c1, t_c2, t_c3 = st.columns(3)
+    if t_c1.button("☀️ 測試 08:30 晨間快報", use_container_width=True):
+        radar = get_night_session_radar()
+        ok, msg = send_morning_market_digest(radar)
+        if ok: st.success("已發送 08:30 晨間快報至手機 LINE！")
+        else: st.error(msg)
+        
+    if t_c2.button("⚡ 測試 09:30 早盤起漲", use_container_width=True):
+        surge_picks = get_intraday_volume_surge_radar(limit=5)
+        ok, msg = send_intraday_surge_digest(surge_picks)
+        if ok: st.success("已發送 09:30 早盤起漲雷達至手機 LINE！")
+        else: st.error(msg)
+
+    if t_c3.button("🚀 測試 15:30 盤後精選", use_container_width=True):
+        picks_for_line = get_short_term_catalyst_picks(limit=5)
+        regime_for_line = calculate_market_regime()
+        ok, msg = send_daily_market_summary(picks_for_line, regime_for_line)
+        if ok: st.success("已發送 15:30 盤後精選快報至手機 LINE！")
+        else: st.error(msg)
+
+    # 將複雜設定收納入折疊選單
+    with st.expander("⚙️ 本機推播金鑰與排程自訂開關（進階設定）", expanded=False):
+        st.caption("提示：若您已在 GitHub Secrets 填寫 `LINE_CHANNEL_TOKEN` 與 `LINE_USER_ID`，雲端排程會自動採用。此處供本機看盤時設定使用。")
+        n_c1, n_c2 = st.columns(2)
+        line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password")
+        line_user_id = n_c2.text_input("LINE User ID：", value=alert_cfg.get("line_user_id", ""), type="password")
+        webhook_url = st.text_input("備用 Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
+        
+        st.markdown("##### ⏰ 排程推播時段開關")
+        sch_c1, sch_c2, sch_c3 = st.columns(3)
+        enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", False))
+        enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", False))
+        enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", False))
+
+        only_trading_days = st.checkbox(
+            "🚫 台股無交易日（休市/週末/國定假日）不發送推播",
+            value=alert_cfg.get("only_on_trading_days", True)
+        )
+        enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", False))
+
+        btn_save_alert, btn_test_conn = st.columns(2)
+        if btn_save_alert.button("💾 儲存本機通知設定", use_container_width=True):
+            alert_cfg["line_channel_token"] = line_channel_token.strip()
+            alert_cfg["line_user_id"] = line_user_id.strip()
+            alert_cfg["webhook_url"] = webhook_url.strip()
+            alert_cfg["enable_schedule_0830"] = enable_0830
+            alert_cfg["enable_schedule_0930"] = enable_0930
+            alert_cfg["enable_schedule_1530"] = enable_1530
+            alert_cfg["only_on_trading_days"] = only_trading_days
+            alert_cfg["enable_stop_loss_alert"] = enable_stop
+            save_alert_settings(alert_cfg)
+            st.success("本機通知設定已成功儲存！")
+
+        if btn_test_conn.button("📲 測試連線金鑰", use_container_width=True):
+            ok, msg = send_line_messaging_api(
+                "【台股戰情室 v4.5.0】LINE 連線測試正常！✅",
+                channel_access_token=line_channel_token.strip(),
+                user_id=line_user_id.strip()
+            )
+            if ok: st.success(msg)
+            else: st.error(f"連線失敗：{msg}")
 
 # ================= 背景靜默異步預熱引擎 (Background Preload) =================
 def _background_preload_task():
@@ -1879,896 +1934,3 @@ if "has_preloaded_cache" not in st.session_state:
     bg_thread = threading.Thread(target=_background_preload_task, daemon=True)
     bg_thread.start()
 
-    
-    with tab1:
-        st.subheader("⚡ 全市場即時成交爆量熱門股 Top 30")
-        with st.spinner("自動掃描全市場成交額榜單並運算量價結構中..."):
-            market_hot = analyze_dynamic_market_hot_stocks(limit=30)
-            
-        if market_hot:
-            can_buy_c = sum(1 for x in market_hot if "BUY" in x['entry_signal'])
-            overheat_c = sum(1 for x in market_hot if "過度延伸" in x['entry_signal'])
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("今日熱門掃描", f"{len(market_hot)} 檔")
-            c2.metric("🟢 浮現突破/蓄勢買點", f"{can_buy_c} 檔")
-            c3.metric("⚠️ 過度延伸嚴禁追高", f"{overheat_c} 檔")
-            
-            st.markdown("#### 🔥 前 6 大成交核心焦點卡片")
-            cards = market_hot[:6]
-            for i in range(0, len(cards), 3):
-                cols = st.columns([1, 1, 1])
-                for j in range(3):
-                    if i + j < len(cards):
-                        it = cards[i + j]
-                        with cols[j]:
-                            pill_class = "pill-buy" if "BUY" in it['entry_signal'] else ("pill-hot" if "過度" in it['entry_signal'] else "pill-warn")
-                            rs_pill = "pill-purple" if it['rs_factor'] > 0 else "pill-warn"
-                            st.markdown(f"""
-                            <div class="rwd-card">
-                                <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <h3 style="margin:0;">{it['name']} <span style="font-size:0.9rem; color:gray;">({it['symbol']})</span></h3>
-                                    <div>
-                                        <span class="pill {rs_pill}">RS: {it['rs_factor']:+}%</span>
-                                        <span class="pill {pill_class}">{it['pattern']}</span>
-                                    </div>
-                                </div>
-                                <h2 style="margin:8px 0; color:#ef4444;">${it['close']} <span style="font-size:1rem; color:#ef4444;">+{it['pct_change']}%</span></h2>
-                                <p style="margin:4px 0; font-size:0.85rem; color:#cbd5e1;">💰 成交金額：<b>約 {it['turnover_billion']} 億元</b></p>
-                                <p style="margin:4px 0; font-size:0.85rem; color:#cbd5e1;">📊 今日量能：<b>均量 {it['vol_ratio']} 倍</b> ｜ RSI: <b>{it['rsi']}</b></p>
-                                <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:8px; margin-top:8px;">
-                                    <span style="font-size:0.82rem; color:#93c5fd;">👉 {it['action_advice']}</span>
-                                </div>
-                                <p style="margin:8px 0 0 0; font-size:0.82rem; color:#94a3b8;">🛡️ 防守停損：<b>${it['stop_loss']}</b> ｜ 🎯 第一目標：<b>${it['target1']}</b></p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-            st.markdown("#### 📋 全市場 Top 30 短線量能詳細清單 (含10日走勢縮圖)")
-            df_m = pd.DataFrame([
-                {
-                    '代號': x['symbol'], '名稱': x['name'], '成交金額(億)': x['turnover_billion'],
-                    '現價': x['close'], '漲跌幅': f"{x['pct_change']}%",
-                    '10日走勢': x.get('sparkline', '───'),
-                    '量能倍數': f"{x['vol_ratio']}x",
-                    'RS相對強度': f"{x['rs_factor']:+}%", '短線型態': x['pattern'],
-                    '進場決策': x['entry_signal'], '防守停損價': x['stop_loss'], '目標價1': x['target1']
-                } for x in market_hot
-            ])
-            st.dataframe(df_m, use_container_width=True)
-            
-    with tab2:
-        st.subheader("🛠️ 我的自選題材追蹤池")
-        with st.expander("➕ 新增股票 / ETF 至自選追蹤池", expanded=False):
-            f1, f2, f3, f4 = st.columns(4)
-            in_sym = f1.text_input("股票/ETF 代號或名稱 (如 00878, 6467, 泰合)", key="custom_sym")
-            in_name = f2.text_input("名稱 (選填，留空自動查詢)", key="custom_name")
-            in_tag = f3.text_input("族群標籤 (選填，如 高股息, 生技)", key="custom_tag")
-            in_note = f4.text_input("自訂備註 (選填)", key="custom_note")
-            if st.button("確認加入自選池", use_container_width=True):
-                if in_sym:
-                    with st.spinner("正在自動解析股票/ETF..."):
-                        res_sym, auto_name = resolve_stock(in_sym)
-                        final_name = in_name.strip() if in_name and in_name.strip() else auto_name
-                        ok, msg = add_to_custom_pool(res_sym, final_name, in_tag, in_note)
-                    st.success(f"已成功加入：{final_name} ({res_sym})！")
-                    st.rerun()
-                    
-        custom_pool = load_custom_pool()
-        if custom_pool:
-            custom_analysis = analyze_custom_pool_stocks(custom_pool)
-            for item in custom_analysis:
-                with st.container():
-                    c_head, c_del = st.columns([5, 1])
-                    with c_head:
-                        st.markdown(f"### {item['name']} ({item['symbol']}) <span class='pill pill-blue'>{item['tag']}</span> <span class='pill pill-purple'>RS: {item['rs_factor']:+}%</span> `{item['entry_signal']}`", unsafe_allow_html=True)
-                    with c_del:
-                        if st.button("🗑️ 移出", key=f"del_c_{item['symbol']}"):
-                            remove_from_custom_pool(item['symbol'])
-                            st.rerun()
-                    inf1, inf2, inf3, inf4 = st.columns(4)
-                    inf1.metric("現價", f"${item['close']}", f"{item['pct_change']}%")
-                    inf2.write(f"• 今日量能：**均量 {item['vol_ratio']} 倍**")
-                    inf3.write(f"• 短線型態：**{item['pattern']}**")
-                    inf4.markdown(f"🛡️ **防守停損**：`${item['stop_loss']}` ｜ 🎯 **目標**：`${item['target1']}`")
-                    st.info(f"👉 **操盤建議**：{item['action_advice']}")
-                    st.markdown("---")
-        else:
-            st.info("目前自選池為空，點擊上方展開表單新增！")
-
-    with tab3:
-        st.subheader("💎 市場核心題材庫 (生技拆股、ETF、AI、CPO、設備、重電)")
-        with st.spinner("計算精選產業題材量價動能中..."):
-            curated_list = analyze_curated_theme_stocks()
-        df_c = pd.DataFrame([
-            {
-                '代號': x['symbol'], '名稱': x['name'], '族群題材': x['theme'],
-                '現價': x['close'], '漲跌幅': f"{x['pct_change']}%", 'RS強度': f"{x['rs_factor']:+}%",
-                '短線型態': x['pattern'], '進場決策': x['entry_signal'], '防守停損價': x['stop_loss']
-            } for x in curated_list
-        ])
-        st.dataframe(df_c, use_container_width=True)
-
-# ================= 頁面 3：名師每週影音前瞻 (老王/哲哲 AI雙軌共振) =================
-elif menu == "🎙️ 3. 名師每週影音前瞻 (老王/哲哲 AI雙軌共振)":
-    st.title("🔥 市場熱點雷達 (大盤評分+爆量榜)")
-    st.caption("全市場成交量能掃描：即時掌握市場人氣資金聚集地、突破結構與精選題材池")
-    m_regime = calculate_market_regime()
-    st.caption("即時爬取 YouTube 官方最新 7 天盤後影音與逐字講評，名師觀點與 AI 數據客觀分開，提供最公正的共振決策！")
-    
-    guru_tab_zhezhe, guru_tab_oldwang = st.tabs([
-        "🔥 哲哲 (郭哲榮) 最新 7 天影音深度解構",
-        "👑 老王 (王倚隆) 最新 7 天影音與時間軸個股"
-    ])
-    
-    with guru_tab_zhezhe:
-        st.subheader("🔥 哲哲 (郭哲榮 摩爾投顧) 最新盤勢觀點與精選個股")
-        st.markdown("""
-        <div style="background:rgba(239,68,68,0.08); border-left:4px solid #ef4444; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
-            <b>📌 分析機制：</b>自動下載 YouTube 官方繁中字幕逐字稿，精準比對被動元件、矽晶圓、AI 伺服器等熱門焦點，擷取名師原始觀點、影片時間軸與多空論述。
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("連線 YouTube 官方影音庫，解析哲哲最新 7 天逐字字幕中..."):
-            raw_z_list = get_zhezhe_weekly_insights(max_days=7)
-            
-        if raw_z_list:
-            seen_symbols = set()
-            unique_z_list = []
-            for item in raw_z_list:
-                if item['symbol'] not in seen_symbols:
-                    seen_symbols.add(item['symbol'])
-                    unique_z_list.append(item)
-                    
-            st.markdown(f"**共擷取到 {len(unique_z_list)} 檔哲哲核心點名標的**（依最近影音排序）：")
-            
-            for item in unique_z_list:
-                evaluated = evaluate_guru_with_ai(item)
-                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
-                r_color = evaluated.get('resonance_color', '#f59e0b')
-                r_desc = evaluated.get('resonance_desc', '')
-                
-                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
-                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
-                            <span class="pill" style="background:rgba(59,130,246,0.15); color:#60a5fa;">⏱️ 影片時間 {item['time_tag']}</span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
-                                {item['stance']}
-                            </span>
-                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
-                                {r_badge}
-                            </span>
-                        </div>
-                    </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#f87171; font-size:0.9rem; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
-                                <span>🎙️ 哲哲原始觀點 (原話摘錄)</span>
-                            </div>
-                            <p style="font-size:0.88rem; color:#e2e8f0; line-height:1.5; margin:0; font-style:italic;">
-                                「{item['quote']}」
-                            </p>
-                            <div style="margin-top:8px;">
-                                <a href="{item['video_url']}" target="_blank" style="font-size:0.8rem; color:#60a5fa; text-decoration:none;">
-                                    ▶️ 點此跳轉觀看此段影片 ({item['time_tag']})
-                                </a>
-                            </div>
-                        </div>
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                <span>🤖 AI 客觀數據體檢 (純技術/籌碼)</span>
-                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
-                            </div>
-                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
-                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
-                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
-                                <div>• AI行動訊號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
-                                <div style="margin-top:4px;">
-                                    {ai_tags_html}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
-                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_z_{item['symbol']}"):
-                    st.session_state.diag_stock_query = item['symbol']
-                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 1. 個股診斷室】查看完整籌碼與技術大圖！")
-        else:
-            st.info("目前 7 天內未偵測到哲哲提及之指定核心標的，請點擊側邊欄【🔄 同步刷新數據】重新擷取。")
-
-    with guru_tab_oldwang:
-        st.subheader("👑 老王 (王倚隆 浦惠投顧) 最新盤勢觀點與每週焦點個股")
-        st.markdown("""
-        <div style="background:rgba(245,158,11,0.08); border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:0.86rem; color:#cbd5e1;">
-            <b>📌 分析機制：</b>自動解析老王愛說笑最新盤後影片、精選「今日我最熱/最弱」單元，並自動索引說明欄談及之全數個股與時間軸。
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("連線 YouTube 官方影音庫，解析老王最新盤後影片中..."):
-            raw_w_list = get_oldwang_weekly_insights(max_days=7)
-            
-        if raw_w_list:
-            seen_w_symbols = set()
-            unique_w_list = []
-            for item in raw_w_list:
-                if item['symbol'] not in seen_w_symbols:
-                    seen_w_symbols.add(item['symbol'])
-                    unique_w_list.append(item)
-                    
-            st.markdown(f"**共擷取到 {len(unique_w_list)} 檔老王深度追蹤標的**：")
-            
-            for item in unique_w_list:
-                evaluated = evaluate_guru_with_ai(item)
-                r_badge = evaluated.get('resonance_badge', '🟡 觀望')
-                r_color = evaluated.get('resonance_color', '#f59e0b')
-                r_desc = evaluated.get('resonance_desc', '')
-                
-                ai_tags_html = " ".join([f"<span class='pill pill-blue' style='font-size:0.75rem;'>{t}</span>" for t in evaluated.get('ai_tags', [])[:3]])
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {r_color}; margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.25rem;">
-                                {item['name']} <span style="color:#94a3b8; font-size:0.95rem;">({item['symbol']})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">📅 {item['published_date']}</span>
-                            <span class="pill" style="background:rgba(245,158,11,0.15); color:#fbbf24;">⏱️ {item['time_tag']}</span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{item['stance_color']}22; color:{item['stance_color']}; border:1px solid {item['stance_color']}55; font-size:0.85rem;">
-                                {item['stance']}
-                            </span>
-                            <span class="pill" style="background:{r_color}22; color:{r_color}; border:1px solid {r_color}55; font-size:0.85rem;">
-                                {r_badge}
-                            </span>
-                        </div>
-                    </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px;">
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#fbbf24; font-size:0.9rem; margin-bottom:6px;">
-                                👑 老王原話講評 / 節目焦點
-                            </div>
-                            <p style="font-size:0.88rem; color:#e2e8f0; line-height:1.5; margin:0;">
-                                {item['quote']}
-                            </p>
-                            <div style="margin-top:8px;">
-                                <a href="{item['video_url']}" target="_blank" style="font-size:0.8rem; color:#60a5fa; text-decoration:none;">
-                                    ▶️ 前往老王影片觀看此集節目
-                                </a>
-                            </div>
-                        </div>
-                        <div style="background:rgba(15,23,42,0.6); padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                            <div style="font-weight:700; color:#38bdf8; font-size:0.9rem; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                <span>🤖 AI 客觀數據體檢 (均線/量能/籌碼)</span>
-                                <span style="font-weight:800; color:#38bdf8;">評分：{evaluated.get('ai_score')} 分</span>
-                            </div>
-                            <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.6;">
-                                <div>• 最新收盤：<b>${evaluated.get('ai_close')}</b> ({evaluated.get('ai_pct_change'):+}%)</div>
-                                <div>• 20MA生命線：<b>${evaluated.get('ai_ma20')}</b> | 建議防守：<b>${evaluated.get('ai_stop_loss')}</b></div>
-                                <div>• AI行動燈號：<span style="color:{evaluated.get('ai_signal_color')}; font-weight:700;">{evaluated.get('ai_signal')}</span></div>
-                                <div style="margin-top:4px;">
-                                    {ai_tags_html}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top:12px; padding:8px 12px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.84rem; color:#cbd5e1;">
-                        <b>⚡ 名師 vs AI 共振判定：</b>{r_desc}
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button(f"🔍 帶入「個股診斷室」深入診斷 {item['name']}", key=f"diag_w_{item['symbol']}"):
-                    st.session_state.diag_stock_query = item['symbol']
-                    st.info(f"已選擇 {item['name']} ({item['symbol']})，請切換至【🩺 1. 個股診斷室】查看完整籌碼與技術大圖！")
-        else:
-            st.info("目前 7 天內未擷取到老王分析之個股清單，請稍候再試。")
-
-# ================= 頁面 4：老王均線獨門戰法 (萬里無雲/買黑不買紅) =================
-elif menu == "👑 4. 老王均線獨門戰法 (萬里無雲/買黑不買紅)":
-    st.title("👑 老王均線獨門戰法特輯")
-    st.caption("源自《oldwangstock 老王愛說笑》操盤金律：均線為最高天條、萬里無雲、買黑不買紅、破線無條件停損！")
-    
-    ow_tab1, ow_tab2, ow_tab3 = st.tabs([
-        "🚀 模組 A：萬里無雲 (三陽開泰) 飆股池",
-        "🎯 模組 B：老王絕活「買黑不買紅」精選",
-        "🔍 模組 C：個股老王均線與大量K體檢機"
-    ])
-    
-    with ow_tab1:
-        st.subheader("🚀 萬里無雲 (三陽開泰) — 均線多頭排列且上檔無壓力")
-        st.caption("老王定義：收盤同時站上 5MA、10MA、20MA 三線，且 5MA > 10MA > 20MA 多頭發散！")
-        with st.spinner("掃描市場萬里無雲標的中..."):
-            m_hot = analyze_dynamic_market_hot_stocks(limit=30)
-            wanli_stocks = []
-            for s in m_hot:
-                ow = evaluate_oldwang_strategy(s['symbol'])
-                if ow and ow['is_wan_li']:
-                    wanli_stocks.append({
-                        '代號': s['symbol'], '名稱': s['name'], '現價': ow['close'],
-                        '漲跌幅': f"{ow['pct_change']}%", '5MA': ow['ma5'], '10MA': ow['ma10'],
-                        '20MA(生命線)': ow['ma20'], '老王評語': ow['cloud_status']
-                    })
-        if wanli_stocks:
-            st.dataframe(pd.DataFrame(wanli_stocks), use_container_width=True)
-        else:
-            st.info("目前熱門榜暫無完全符合萬里無雲標的，市場處於均線震盪！")
-            
-    with ow_tab2:
-        st.subheader("🎯 老王招牌「買黑不買紅」— 回測 5MA/10MA 守穩量縮切入點")
-        st.caption("老王名言：散戶最愛追大紅棒，老手只在『突破後拉回收黑K、回測均線不破且量縮』時買進！")
-        with st.spinner("過濾買黑不買紅高盈虧比標的中..."):
-            m_hot = analyze_dynamic_market_hot_stocks(limit=30)
-            buy_black_stocks = []
-            for s in m_hot:
-                ow = evaluate_oldwang_strategy(s['symbol'])
-                if ow and ow['is_buy_black']:
-                    buy_black_stocks.append({
-                        '代號': s['symbol'], '名稱': s['name'], '現價': ow['close'],
-                        '今日K棒': '黑K (拉回)', '5MA支撐': ow['ma5'], '10MA支撐': ow['ma10'],
-                        '防守大量K低點': ow['max_vol_low'], '老王建議': '🟢 買點浮現：量縮回測有守'
-                    })
-        if buy_black_stocks:
-            st.dataframe(pd.DataFrame(buy_black_stocks), use_container_width=True)
-        else:
-            st.info("今日無恰好回測 5MA/10MA 守穩之量縮黑K標的。")
-
-    with ow_tab3:
-        st.subheader("🔍 個股老王均線與大量K防守體檢機")
-        col_ow1, col_ow2 = st.columns([3, 1])
-        with col_ow1:
-            ow_input = st.text_input("輸入股票或 ETF 代號/名稱：", value="6467", key="ow_search").strip()
-        with col_ow2:
-            st.write("")
-            st.write("")
-            st.button("執行老王體檢", use_container_width=True)
-            
-        if ow_input:
-            r_s, r_n = resolve_stock(ow_input)
-            ow_res = evaluate_oldwang_strategy(r_s)
-            if ow_res:
-                st.markdown(f"""
-                <div class="rwd-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <h3 style="margin:0;">{r_n} ({r_s}) — {ow_res['cloud_status']}</h3>
-                            <span style="font-size:0.85rem; color:#94a3b8;">{ow_res['cloud_desc']}</span>
-                        </div>
-                        <h2 style="margin:0; color:#ef4444;">${ow_res['close']}</h2>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                ow_c1, ow_c2, ow_c3, ow_c4 = st.columns(4)
-                ow_c1.metric("5MA 短線減碼點", f"${ow_res['ma5']}", "跌破先賣一半")
-                ow_c2.metric("10MA / 20MA 生命線", f"${ow_res['ma20']}", "破線全數清倉")
-                ow_c3.metric("近20日大量K低點", f"${ow_res['max_vol_low']}", f"於 {ow_res['max_vol_date']} 爆量")
-                ow_c4.metric("季線 (60MA)", f"${ow_res['ma60']}", "波段大防守")
-                
-                st.markdown("#### 🚨 老王即時出場警報診斷")
-                if "🛑" in ow_res['exit_alert'] or "💣" in ow_res['exit_alert']:
-                    st.error(ow_res['exit_alert'])
-                elif "⚠️" in ow_res['exit_alert']:
-                    st.warning(ow_res['exit_alert'])
-                else:
-                    st.success(ow_res['exit_alert'])
-
-# ================= 頁面 5：股市同學會社群輿情雷達 (散戶多空溫度計) =================
-elif menu == "🔥 5. 股市同學會社群輿情雷達 (散戶多空溫度計)":
-    st.title("🔥 股市同學會 (CMoney) 社群輿情與散戶雷達")
-    st.caption("採集台灣最大散戶社群近 5 天熱門發文與焦點標的，由 Google Gemini AI 深度剖析散戶心理、多空狂熱度與潛在買賣風險！")
-
-    cm_tab_radar, cm_tab_raw = st.tabs([
-        "🤖 Gemini 散戶情緒溫度計與買賣篩選",
-        "📋 股市同學會近 5 天熱門熱議焦點原文"
-    ])
-
-    # 1. 優先檢查本地 JSON 快取 (0 Token 浪費)
-    cached_forum_data = data_cache.load_forum_sentiment()
-    is_valid = data_cache.is_forum_cache_valid(max_age_hours=3)
-
-    if not is_valid or "hot_stocks_analysis" not in cached_forum_data:
-        with st.spinner("連線股市同學會採集近 5 天熱門文章，並由 Google Gemini 深度解讀中..."):
-            topics = forum_engine.fetch_cmoney_popular_topics()
-            ranks = forum_engine.fetch_cmoney_ranking_symbols()
-            gemini_forum_res = gemini_engine.analyze_forum_sentiment_with_gemini(topics)
-            
-            if gemini_forum_res:
-                cached_forum_data = {
-                    **gemini_forum_res,
-                    "ranking_symbols": ranks,
-                    "topics_sample": topics[:8]
-                }
-                data_cache.save_forum_sentiment(cached_forum_data)
-            elif not cached_forum_data:
-                # 若無 API Key 或連線失敗，提供基準結構
-                cached_forum_data = {
-                    "overall_sentiment": "分歧震盪 (多空觀望)",
-                    "crowd_psychology": "散戶對指數急跌感到焦慮，討論度集中於高殖利率 ETF 與權值股，部分散戶嘗試抄底，但市場追價意願謹慎。",
-                    "market_regime_impact": "短線量縮整理，缺乏恐慌爆量換手前，建議多看少做不追高。",
-                    "hot_stocks_analysis": [
-                        {
-                            "stock_name": "台積電",
-                            "symbol": "2330",
-                            "retail_sentiment": "意見分歧",
-                            "sentiment_score": 70,
-                            "ai_trading_advice": "可逢低承接",
-                            "key_reason": "散戶對基本面仍具信心，回測季線支撐吸引長線買盤，但短線受外資提款壓抑。",
-                            "risk_level": "中"
-                        },
-                        {
-                            "stock_name": "鴻海",
-                            "symbol": "2317",
-                            "retail_sentiment": "偏多期待",
-                            "sentiment_score": 75,
-                            "ai_trading_advice": "波段續抱",
-                            "key_reason": "AI 伺服器出貨放量預期高，討論度熱絡但未達極度狂熱，線型維持多頭位階。",
-                            "risk_level": "中"
-                        },
-                        {
-                            "stock_name": "元大台灣50",
-                            "symbol": "0050",
-                            "retail_sentiment": "一面倒看多",
-                            "sentiment_score": 85,
-                            "ai_trading_advice": "定期定額 / 嚴禁單筆追高",
-                            "key_reason": "散戶大舉湧入 ETF 撿便宜，短線反向指標情緒偏高，需防範大盤進一步補跌震盪。",
-                            "risk_level": "低"
-                        }
-                    ],
-                    "ranking_symbols": ranks,
-                    "topics_sample": topics[:8]
-                }
-                data_cache.save_forum_sentiment(cached_forum_data)
-
-    with cm_tab_radar:
-        st.markdown(f"""
-        <div class="rwd-card" style="border-left: 6px solid #38bdf8; margin-bottom: 16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                <div>
-                    <h3 style="margin:0; font-size:1.25rem;">📊 散戶群眾情緒總體溫：<b>{cached_forum_data.get('overall_sentiment', '中性')}</b></h3>
-                    <span style="font-size:0.85rem; color:#94a3b8;">📅 快取時間：{cached_forum_data.get('cached_at', '剛才')} (3 小時內走本機 JSON 快取，0 Token 浪費)</span>
-                </div>
-                <div>
-                    <span class="pill pill-blue">🧠 Gemini 深度語意模型</span>
-                    <span class="pill pill-gold">🎯 散戶反向指標</span>
-                </div>
-            </div>
-            <div style="margin-top:12px; background:rgba(15,23,42,0.6); padding:12px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-                <div style="color:#38bdf8; font-weight:700; font-size:0.9rem; margin-bottom:4px;">👥 散戶群眾心理學剖析：</div>
-                <p style="margin:0; font-size:0.9rem; line-height:1.6; color:#e2e8f0;">
-                    {cached_forum_data.get('crowd_psychology', '')}
-                </p>
-                <div style="margin-top:8px; font-size:0.86rem; color:#cbd5e1;">
-                    ⚡ <b>對大盤短線影響：</b>{cached_forum_data.get('market_regime_impact', '')}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.subheader("🎯 散戶近 5 天熱門關注標的 ＆ Gemini 買賣篩選建議")
-        hot_list = cached_forum_data.get("hot_stocks_analysis", [])
-        
-        if hot_list:
-            for item in hot_list:
-                s_name = item.get("stock_name", "")
-                s_code = item.get("symbol", "").strip()
-                advice = item.get("ai_trading_advice", "觀望")
-                retail_stc = item.get("retail_sentiment", "中性")
-                reason = item.get("key_reason", "")
-                risk = item.get("risk_level", "中")
-                score = item.get("sentiment_score", 50)
-                
-                # 顏色標示
-                adv_color = "#10b981" if any(k in advice for k in ["買", "接", "抱", "多"]) else "#ef4444"
-                
-                card_html = textwrap.dedent(f"""
-                <div class="rwd-card" style="border-left: 6px solid {adv_color}; margin-bottom: 14px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <h3 style="margin:0; display:inline-block; font-size:1.2rem;">
-                                {s_name} <span style="color:#94a3b8; font-size:0.95rem;">({s_code if s_code else '社群熱門'})</span>
-                            </h3>
-                            <span class="pill" style="background:rgba(255,255,255,0.08); color:#f8fafc; margin-left:8px;">散戶熱度 {score} 分</span>
-                            <span class="pill" style="background:rgba(239,68,68,0.15); color:#f87171;">散戶情緒：{retail_stc}</span>
-                        </div>
-                        <div>
-                            <span class="pill" style="background:{adv_color}22; color:{adv_color}; border:1px solid {adv_color}55; font-size:0.9rem; font-weight:700;">
-                                💡 建議：{advice}
-                            </span>
-                            <span class="pill pill-warn">風險等級：{risk}</span>
-                        </div>
-                    </div>
-                    <div style="margin-top:10px; background:rgba(15,23,42,0.6); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); font-size:0.88rem; color:#cbd5e1; line-height:1.6;">
-                        <b>🔍 Gemini 綜合診斷原因：</b>{reason}
-                    </div>
-                </div>
-                """).strip()
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if s_code:
-                    if st.button(f"🩺 帶入「個股診斷室」查看 {s_name} ({s_code}) 技術籌碼", key=f"diag_forum_{s_code}"):
-                        st.session_state.diag_stock_query = s_code
-                        st.info(f"已選擇 {s_name} ({s_code})，請切換至【🩺 1. 個股診斷室】深入檢查！")
-
-    with cm_tab_raw:
-        st.subheader("📋 股市同學會當前即時熱門個股排行 (前 15 名)")
-        ranking_syms = cached_forum_data.get("ranking_symbols", [])
-        if ranking_syms:
-            st.write("、".join([f"`{s}`" for s in ranking_syms]))
-        
-        st.markdown("---")
-        st.subheader("💬 近 5 天同學會社群熱門討論摘要節錄")
-        raw_samples = cached_forum_data.get("topics_sample", [])
-        for t_item in raw_samples:
-            st.markdown(f"""
-            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px 14px; margin-bottom:10px; border-left:3px solid #60a5fa;">
-                <div style="font-weight:700; color:#60a5fa; font-size:0.85rem; margin-bottom:4px;">
-                    📌 討論標的：{', '.join(t_item.get('stocks', [])) or '大盤綜合話題'}
-                </div>
-                <div style="font-size:0.86rem; color:#cbd5e1; line-height:1.5;">
-                    {t_item.get('text', '')}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-# ================= 頁面 6：投信鎖碼波段選股榜 =================
-elif menu == "🎯 6. 投信鎖碼波段選股榜":
-    st.title("🎯 投信鎖碼波段選股榜")
-    st.caption("連線證交所全市場投信真實買超前 30 名，多因子挑出 Top 5")
-    
-    @st.cache_data(ttl=1200)
-    def cached_rankings():
-        return analyze_and_rank_pool(limit=30)
-    with st.spinner("抓取投信買賣超排行榜中..."):
-        all_ranks = cached_rankings()
-    top5 = all_ranks[:5]
-    if top5:
-        st.subheader("🔥 投信波段鎖碼精選 Top 5 (持股 1~2 週)")
-        cols = st.columns(len(top5))
-        for i, s in enumerate(top5):
-            with cols[i]:
-                st.markdown(f"""
-                <div class="rwd-card">
-                    <h3 style="margin:0;">{s['name']}</h3>
-                    <p style="color:gray; font-size:0.8rem; margin:0;">({s['symbol']})</p>
-                    <h2 style="margin:6px 0; color:#ef4444;">${s['close']} <span style="font-size:0.9rem;">+{s['pct_change']}%</span></h2>
-                    <p style="font-size:0.85rem; margin:2px 0;">評分：<b>{s['score']} / 100</b></p>
-                    <p style="font-size:0.85rem; margin:2px 0;">🛡️ 防守價：<b>${s['stop_loss']}</b></p>
-                    <p style="font-size:0.85rem; margin:2px 0;">🎯 目標價：<b>${s['target_price']}</b></p>
-                </div>
-                """, unsafe_allow_html=True)
-                with st.expander("入選理由"):
-                    for sig in s['signals']:
-                        st.write(f"• {sig}")
-        st.markdown("---")
-        st.subheader("📋 投信買超鎖碼評分總榜單 (Top 30)")
-        df_display = pd.DataFrame([
-            {
-                '代號': item['symbol'], '名稱': item['name'], '收盤價': item['close'],
-                '漲跌幅(%)': f"{item['pct_change']}%", '投信買超(張)': f"{item['trust_vol']:,}",
-                '量化分數': item['score'], '20MA月線': item['ma20'], '建議防守價': item['stop_loss']
-            } for item in all_ranks
-        ])
-        st.dataframe(df_display, use_container_width=True)
-
-# ================= 頁面 7：盤後宏觀與法人籌碼 =================
-elif menu == "🌐 7. 盤後宏觀與法人籌碼":
-    st.title("🌐 盤後宏觀總覽與三大法人資金風向標")
-    macro = get_macro_overview()
-    funds = get_institutional_investors_summary()
-    st.subheader("📊 國際連動與核心指數")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("加權指數", f"{macro.get('加權指數',{}).get('close',0)}", f"{macro.get('加權指數',{}).get('pct',0)}%")
-    with col2:
-        st.metric("櫃買指數", f"{macro.get('櫃買指數',{}).get('close',0)}", f"{macro.get('櫃買指數',{}).get('pct',0)}%")
-    with col3:
-        st.metric("台積電 ADR", f"${macro.get('台積電ADR',{}).get('close',0)}", f"{macro.get('台積電ADR',{}).get('pct',0)}%")
-    with col4:
-        st.metric("輝達 NVDA", f"${macro.get('輝達 (NVDA)',{}).get('close',0)}", f"{macro.get('輝達 (NVDA)',{}).get('pct',0)}%")
-    with col5:
-        st.metric("費城半導體", f"${macro.get('費城半導體',{}).get('close',0)}", f"{macro.get('費城半導體',{}).get('pct',0)}%")
-    st.markdown("---")
-    st.subheader("💰 三大法人當日買賣超 (億元)")
-    f1, f2, f3, f4 = st.columns(4)
-    f1.metric("外資買賣超", f"{funds['外資']} 億", delta=f"{funds['外資']}")
-    f2.metric("投信買賣超", f"{funds['投信']} 億", delta=f"{funds['投信']}")
-    f3.metric("自營商買賣超", f"{funds['自營商']} 億", delta=f"{funds['自營商']}")
-    f4.metric("三大法人總計", f"{funds['合計']} 億", delta=f"{funds['合計']}")
-
-# ================= 頁面 8：互動 K 線與指標圖室 =================
-elif menu == "📈 8. 互動 K 線與指標圖室":
-    st.title("📈 專業互動 K 線圖室 (台股 紅漲 🔴 / 綠跌 🟢)")
-    st.caption("支援輸入代號（如 00878, 0050, 6467）或中文名稱（如 泰合, 仁新）")
-    col_k1, col_k2 = st.columns([3, 1])
-    with col_k1:
-        sym_in = st.text_input("輸入股票/ETF 代號或名稱：", value="00878").strip()
-    with col_k2:
-        st.write("")
-        st.write("")
-        st.button("更新線圖", use_container_width=True)
-    if sym_in:
-        real_sym, real_name = resolve_stock(sym_in)
-        df = get_stock_history(real_sym, period='4mo')
-        if not df.empty:
-            st.markdown(f"##### 📈 【{real_name} ({real_sym})】日 K 線與均線布林系統")
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(
-                x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                increasing_line_color='#ef4444', decreasing_line_color='#22c55e',
-                name='K線'
-            ))
-            fig.add_trace(go.Scatter(x=df.index, y=df['5MA'], line=dict(color='#f59e0b', width=1.5), name='5MA'))
-            fig.add_trace(go.Scatter(x=df.index, y=df['10MA'], line=dict(color='#a855f7', width=1.5), name='10MA'))
-            fig.add_trace(go.Scatter(x=df.index, y=df['20MA'], line=dict(color='#3b82f6', width=2.2), name='20MA(生命線)'))
-            fig.add_trace(go.Scatter(x=df.index, y=df['60MA'], line=dict(color='#10b981', width=1.5), name='60MA(季線)'))
-            fig.add_trace(go.Scatter(x=df.index, y=df['BB_Upper'], line=dict(color='gray', width=1, dash='dash'), name='布林上軌'))
-            fig.add_trace(go.Scatter(x=df.index, y=df['BB_Lower'], line=dict(color='gray', width=1, dash='dash'), name='布林下軌'))
-            fig.update_layout(
-                xaxis_rangeslider_visible=False, height=500,
-                margin=dict(l=10, r=10, t=30, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.error(f"查無 {real_name} ({real_sym}) 之歷史量價數據。")
-
-# ================= 頁面 9：庫存管家與防守警報 (含Line通知) =================
-elif menu == "💼 9. 庫存管家與防守警報 (含Line通知)":
-    st.title("💼 我的持股管家 (庫存 + 即時風險警報)")
-    
-    # 雲端自動推播狀態與進階設定區塊
-    with st.container():
-        alert_cfg = load_alert_settings()
-        today_is_trade, trade_desc = is_tw_trading_day()
-        trade_status_badge = "🟢 今日開盤" if today_is_trade else f"🔴 今日休市 ({trade_desc})"
-
-        # 頂部狀態卡片
-        st.markdown(f"""
-        <div class="rwd-card" style="border-left: 5px solid #22c55e; background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.85) 100%); margin-bottom: 15px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:1.3rem;">⚡</span>
-                    <span style="font-size:1.05rem; font-weight:700; color:#f8fafc;">LINE 雲端定時推播服務 (由 GitHub Actions 託管)</span>
-                </div>
-                <div>
-                    <span class="pill pill-buy">🟢 雲端排程全時待命中</span>
-                    <span class="pill" style="background:rgba(255,255,255,0.08); color:#cbd5e1;">{trade_status_badge}</span>
-                </div>
-            </div>
-            <p style="font-size:0.86rem; color:#94a3b8; margin:8px 0 6px 0;">
-                即使關閉電腦或瀏覽器，GitHub Actions 伺服器亦將在營業日依時段準時推播至您的手機 LINE，不受網頁休眠限制。
-            </p>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size:0.84rem; color:#cbd5e1; margin-top:8px;">
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">☀️ <b>08:30</b> 晨間早盤夜盤風向</div>
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">⚡ <b>09:30</b> 早盤起漲爆量雷達</div>
-                <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;">🚀 <b>15:30</b> 盤後三大法人精選榜</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 外部精準 Webhook 方案推薦卡片 (解決 GitHub 排程塞車)
-        with st.expander("⚡ 終極抗延遲方案：如何解決 GitHub 免費排程塞車延遲？(推薦設定)", expanded=False):
-            st.markdown("""
-            **❓ 為什麼有時候 08:30 沒有準時收到？**
-            * GitHub Actions 內建的 `schedule: cron` 排程在全球尖峰時刻（如亞洲開盤的早晨）常會被 GitHub 免費伺服器延遲 1~3 小時。
-            * 但只要是 **外部呼叫觸發 (`workflow_dispatch`)**，GitHub 伺服器保證在 **30 秒內秒級啟動**！
-            
-            **🚀 零成本徹底解決方案 (3 分鐘完成設定)：**
-            1. 前往免費排程網站 **[cron-job.org](https://cron-job.org/)** 註冊一個免費帳號。
-            2. 新增 3 個 Cronjob（分別設定為週一到週五的 08:28、09:28、15:28 台灣時間）：
-               - **URL 網址**：`https://api.github.com/repos/evan510/tw-stock-dashboard/actions/workflows/scheduled_push.yml/dispatches`
-               - **Request Method**：`POST`
-               - **Headers**：
-                 - `Authorization: Bearer <您的 GitHub Personal Access Token>`
-                 - `Accept: application/vnd.github.v3+json`
-                 - `User-Agent: CronJob-Client`
-               - **Body (JSON)**：`{"ref": "main"}`
-            3. 這樣一來，每天時間一到，外部伺服器會立即發送 API 命令，GitHub Actions 將會**一秒不差立刻啟動並推播到您的手機 LINE**！
-            """)
-
-        # 快速操作與 GitHub 跳轉
-        act_col1, act_col2 = st.columns([1, 1])
-        with act_col1:
-            st.link_button(
-                "🌐 前往 GitHub Actions 查看排程日誌 / 雲端手動觸發",
-                url="https://github.com/evan510/tw-stock-dashboard/actions",
-                use_container_width=True
-            )
-        with act_col2:
-            st.link_button(
-                "🔑 設定 GitHub Repository Secrets (LINE Token 密鑰)",
-                url="https://github.com/evan510/tw-stock-dashboard/settings/secrets/actions",
-                use_container_width=True
-            )
-
-        # 立即手動測試 3 大快報推播效果
-        st.markdown("##### 🧪 立即手動測試推播效果（發送到您的手機 LINE）")
-        t_c1, t_c2, t_c3 = st.columns(3)
-        if t_c1.button("☀️ 測試 08:30 晨間快報", use_container_width=True):
-            radar = get_night_session_radar()
-            ok, msg = send_morning_market_digest(radar)
-            if ok: st.success("已發送 08:30 晨間快報至手機 LINE！")
-            else: st.error(msg)
-            
-        if t_c2.button("⚡ 測試 09:30 早盤起漲", use_container_width=True):
-            surge_picks = get_intraday_volume_surge_radar(limit=5)
-            ok, msg = send_intraday_surge_digest(surge_picks)
-            if ok: st.success("已發送 09:30 早盤起漲雷達至手機 LINE！")
-            else: st.error(msg)
-
-        if t_c3.button("🚀 測試 15:30 盤後精選", use_container_width=True):
-            picks_for_line = get_short_term_catalyst_picks(limit=5)
-            regime_for_line = calculate_market_regime()
-            ok, msg = send_daily_market_summary(picks_for_line, regime_for_line)
-            if ok: st.success("已發送 15:30 盤後精選快報至手機 LINE！")
-            else: st.error(msg)
-
-        # 將複雜設定收納入折疊選單
-        with st.expander("⚙️ 本機推播金鑰與排程自訂開關（進階設定）", expanded=False):
-            st.caption("提示：若您已在 GitHub Secrets 填寫 `LINE_CHANNEL_TOKEN` 與 `LINE_USER_ID`，雲端排程會自動採用。此處供本機看盤時設定使用。")
-            n_c1, n_c2 = st.columns(2)
-            line_channel_token = n_c1.text_input("LINE Channel Access Token：", value=alert_cfg.get("line_channel_token", ""), type="password")
-            line_user_id = n_c2.text_input("LINE User ID：", value=alert_cfg.get("line_user_id", ""), type="password")
-            webhook_url = st.text_input("備用 Webhook URL (Discord/Slack/Telegram)：", value=alert_cfg.get("webhook_url", ""), type="password")
-            
-            st.markdown("##### ⏰ 排程推播時段開關")
-            sch_c1, sch_c2, sch_c3 = st.columns(3)
-            enable_0830 = sch_c1.checkbox("☀️ 08:30 晨間早盤快報", value=alert_cfg.get("enable_schedule_0830", True))
-            enable_0930 = sch_c2.checkbox("⚡ 09:30 早盤起漲雷達", value=alert_cfg.get("enable_schedule_0930", True))
-            enable_1530 = sch_c3.checkbox("🚀 15:30 盤後精選快報", value=alert_cfg.get("enable_schedule_1530", True))
-
-            only_trading_days = st.checkbox(
-                "🚫 台股無交易日（休市/週末/國定假日）不發送推播",
-                value=alert_cfg.get("only_on_trading_days", True)
-            )
-            enable_stop = st.checkbox("🚨 跌破停損價與 20MA 自動風險警報", value=alert_cfg.get("enable_stop_loss_alert", True))
-
-            btn_save_alert, btn_test_conn = st.columns(2)
-            if btn_save_alert.button("💾 儲存本機通知設定", use_container_width=True):
-                alert_cfg["line_channel_token"] = line_channel_token.strip()
-                alert_cfg["line_user_id"] = line_user_id.strip()
-                alert_cfg["webhook_url"] = webhook_url.strip()
-                alert_cfg["enable_schedule_0830"] = enable_0830
-                alert_cfg["enable_schedule_0930"] = enable_0930
-                alert_cfg["enable_schedule_1530"] = enable_1530
-                alert_cfg["only_on_trading_days"] = only_trading_days
-                alert_cfg["enable_stop_loss_alert"] = enable_stop
-                save_alert_settings(alert_cfg)
-                st.success("本機通知設定已成功儲存！")
-
-            if btn_test_conn.button("📲 測試連線金鑰", use_container_width=True):
-                ok, msg = send_line_messaging_api(
-                    "【台股戰情室 v4.5.0】LINE 連線測試正常！✅",
-                    channel_access_token=line_channel_token.strip(),
-                    user_id=line_user_id.strip()
-                )
-                if ok: st.success(msg)
-                else: st.error(f"連線失敗：{msg}")
-                
-    st.markdown("---")
-    with st.expander("➕ 新增持股 / ETF 記錄", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        n_sym = c1.text_input("代號或名稱 (如 00878, 6467, 泰合)")
-        n_name = c2.text_input("名稱 (選填，留空自動查詢)")
-        n_cost = c3.number_input("買進成本價格", min_value=1.0, value=20.0, step=0.5)
-        n_shares = c4.number_input("股數 (1張=1000股)", min_value=1, value=1000, step=100)
-        if st.button("確認加入庫存部位", use_container_width=True):
-            if n_sym:
-                r_s, r_n = resolve_stock(n_sym)
-                final_name = n_name.strip() if n_name and n_name.strip() else r_n
-                add_holding(r_s, final_name, n_cost, n_shares)
-                st.success(f"已成功記錄 {final_name} ({r_s})！")
-                st.rerun()
-    holdings = load_portfolio()
-    if holdings:
-        evaluated, summary = evaluate_holdings(holdings)
-        s1, s2, s3, s4 = st.columns(4)
-        s1.metric("總投入成本", f"${summary['total_cost']:,.0f}")
-        s2.metric("當前總市值", f"${summary['total_market_value']:,.0f}")
-        s3.metric("未實現總損益", f"${summary['total_profit']:,.0f}", delta=f"{summary['total_profit_pct']}%")
-        s4.metric("目前持股檔數", f"{len(evaluated)} 檔")
-        
-        # 警報彙整與一鍵推播
-        alerts = [item for item in evaluated if item.get('is_alert')]
-        if alerts:
-            st.warning(f"⚠️ 注意！目前有 {len(alerts)} 檔持股觸發風險警報（跌破月線或虧損超過 5%）")
-            if st.button("🚨 一鍵推播庫存警報至 LINE", type="primary", use_container_width=True):
-                msg_lines = ["【台股戰情室 風險警報通知】"]
-                for a in alerts:
-                    msg_lines.append(f"• {a['name']} ({a['symbol']}): 現價 ${a['current_price']} 損益 {a['profit_pct']}% -> {a['alert_reason']}")
-                msg_lines.append(f"總投入成本: ${summary['total_cost']:,.0f} | 市值: ${summary['total_market_value']:,.0f}")
-                full_msg = "\n".join(msg_lines)
-                ok, msg = send_smart_notification(full_msg, title="【台股戰情室 風險警報通知】")
-                if ok:
-                    st.success("已成功將警報發送至 LINE！")
-                else:
-                    st.error(f"發送失敗：{msg}")
-                    
-        st.markdown("---")
-        for item in evaluated:
-            ch, cb = st.columns([5, 1])
-            ch.markdown(f"### {item['name']} ({item['symbol']}) — **{item['status_light']}**")
-            if cb.button("🗑️ 刪除", key=f"del_port_{item['index']}"):
-                remove_holding(item['index'])
-                st.rerun()
-            col1, col2, col3, col4 = st.columns(4)
-            col1.write(f"• 買進成本：**${item['cost']}** ({item['shares']}股)")
-            col2.write(f"• 最新現價：**${item['current_price']}**")
-            col3.write(f"• 未實現損益：**${item['profit']:,.0f}** (`{item['profit_pct']}%`)")
-            col4.write(f"• 20MA防守線：**${item['ma20']}**")
-            st.info(f"💡 **操盤決策建議**：{item['advice']}")
-            st.markdown("---")
-    else:
-        st.info("目前無持股記錄，點擊上方展開表單新增！")
-
-# ================= 頁面 10：短線與波段操盤心法 =================
-elif menu == "📖 10. 短線與波段操盤心法":
-    st.title("⚙️ 通知設定 (LINE 推播與雲端排程)")
-    st.markdown("""
-    ### 🎯 【短線放量突破實戰檢核單】
-    1. **大盤環境**：加權指數環境評分必須 >= 40 分，空頭環境全域禁止開倉。
-    2. **超額強度 (RS)**：個股近 20 日表現必須強於大盤 (RS > 0)，只打強勢領頭羊。
-    3. **型態確認**：帶量突破 20 日最高點（均量 1.5 倍以上），或於前高 2.5% 內窄幅量縮蓄勢。
-    4. **嚴禁追高 (Too Extended)**：單日急漲超過 +7% 或偏離前高超標者，嚴禁追價！
-    
-    ---
-    ### 👑 【老王均線最高指導原則】
-    * **萬里無雲 (三陽開泰)**：站穩 5MA、10MA、20MA 三線多頭排列，上檔無壓力！
-    * **買黑不買紅**：突破後拉回測試 5MA/10MA 守穩之量縮黑K，才是最高盈虧比買點！
-    * **出場三部曲**：
-      * 跌破 5MA：短線停滯，「先賣一半減碼」！
-      * 跌破 10MA / 20MA：生命線失守，「全數清倉，現金為王」！
-      * 跌破近 20 日大量 K 棒最低點：主力套牢訊號，無條件止損撤退！
-    """)
-
-# ================= 背景靜默異步預熱引擎 (Background Preload) =================
-def _background_preload_task():
-    """
-    在使用者瀏覽當前頁面的背後，由獨立後台線程預先載入其它頁面資料並放入 @st.cache_data 快取，
-    讓使用者切換到其它功能分頁時能夠享受秒開體驗！
-    """
-    try:
-        # 1. 預熱大盤環境評分與熱門 30 檔
-        calculate_market_regime()
-        analyze_dynamic_market_hot_stocks(limit=30)
-    except Exception:
-        pass
-        
-    try:
-        # 2. 預熱投信鎖碼前 30 檔
-        analyze_and_rank_pool(limit=30)
-    except Exception:
-        pass
-        
-    try:
-        # 3. 預熱精選題材庫
-        analyze_curated_theme_stocks()
-    except Exception:
-        pass
-
-# 啟動自動排程推播守護線程 (08:30 / 09:30 / 15:30)
-try:
-    ensure_scheduler_running()
-except Exception:
-    pass
-
-# 每個 Session 僅在背景啟動一次預熱線程，不佔用前端渲染時間
-if "has_preloaded_cache" not in st.session_state:
-    st.session_state.has_preloaded_cache = True
-    bg_thread = threading.Thread(target=_background_preload_task, daemon=True)
-    bg_thread.start()

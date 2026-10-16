@@ -1,15 +1,12 @@
 name: 台股戰情室定時推播服務
 
 on:
-  schedule:
-    # GitHub Actions 使用 UTC 時間 (台灣時間 UTC+8)
-    # 避開全球整點與半點排隊塞車高峰，微調前置幾分鐘：
-    # 台灣時間 08:28 -> UTC 00:28 (週一到週五)
-    - cron: '28 0 * * 1-5'
-    # 台灣時間 09:28 -> UTC 01:28 (週一到週五)
-    - cron: '28 1 * * 1-5'
-    # 台灣時間 15:28 -> UTC 07:28 (週一到週五)
-    - cron: '28 7 * * 1-5'
+#   schedule:
+#     # GitHub Actions 使用 UTC 時間 (台灣時間 UTC+8)
+#     # 暫時關閉定時排程推播服務以解決延遲問題
+#     # - cron: '28 0 * * 1-5'
+#     # - cron: '28 1 * * 1-5'
+#     # - cron: '28 7 * * 1-5'
   # 支援在 GitHub 網頁上手動點擊立即測試 (workflow_dispatch)
   workflow_dispatch:
     inputs:

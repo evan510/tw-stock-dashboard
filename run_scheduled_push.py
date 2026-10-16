@@ -46,6 +46,11 @@ def main():
 
     settings = notifier.load_alert_settings()
 
+    # 0. 檢核全域排程推播總開關 (暫停推播)
+    if not settings.get("enable_scheduled_push", False):
+        print("[INFO] LINE 雲端排程定時推播服務目前已設定為關閉/暫停狀態，跳過執行。")
+        return
+
     # 1. 檢核是否為台股開盤營業日 (休市/週末不發送)
     if settings.get("only_on_trading_days", True):
         is_trading, reason = data_engine.is_tw_trading_day(today_date)

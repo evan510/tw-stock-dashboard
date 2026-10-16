@@ -12,10 +12,11 @@ def load_alert_settings():
         "line_user_id": "",
         "line_token": "",  # legacy
         "webhook_url": "",
-        "daily_digest": True,
-        "enable_schedule_0830": True,
-        "enable_schedule_0930": True,
-        "enable_schedule_1530": True,
+        "daily_digest": False,
+        "enable_scheduled_push": False,  # 全域定時推播總開關 (暫停關閉)
+        "enable_schedule_0830": False,
+        "enable_schedule_0930": False,
+        "enable_schedule_1530": False,
         "only_on_trading_days": True,
         "enable_stop_loss_alert": True,
         "enable_ma20_break_alert": True
@@ -271,6 +272,11 @@ def _run_scheduler_loop():
             # 僅在營業日 (週一至週五) 執行自動推播
             if weekday < 5:
                 settings = load_alert_settings()
+
+                # 若全域排程推播總開關已關閉，跳過背景執行
+                if not settings.get("enable_scheduled_push", False):
+                    time.sleep(60)
+                    continue
 
                 # 若使用者開啟「休市/非交易日不發送」，進行證交所休市日檢核
                 if settings.get("only_on_trading_days", True):
